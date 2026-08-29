@@ -127,7 +127,7 @@ multi-singer の場合は `model.n_speakers`、`data.spk_map`、`train.balance_s
 
 - Git commit / dirty diff、config の完全コピー
 - dataset manifest / split / checksums
-- dependency lock と CUDA / driver / GPU
+- dependency lock（`uv.lock` と `.python-version`）と CUDA / driver / GPU。現在の基準環境は [実装状況](svc-implementation-status.md) の「実行環境」表
 - seed、AMP、batch frames、peak VRAM
 - init checkpoint と load report
 - train/validation curve、生成 sample、failure list

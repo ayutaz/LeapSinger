@@ -48,7 +48,7 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
     uv run python -m unittest test_svc_model -v
     uv run python -m unittest test_svc_model.HarmonicSVCModelTests.test_forward_and_infer_reuse_flow_with_svc_conditioning
 
-`unittest discover` はリポジトリ全体を import するため、`librosa` 等が入っていない環境では収集時に失敗します。SVC 関連の検証は `test_svc_model.py` を直接指定してください。
+`uv sync` 済みの環境なら `uv run python -m unittest discover` も通ります。ただし top-level の `test_*.py` は `test_svc_model.py` だけなので、収集される 10 件は上と同じです（preprocess / export / 既存 SVS 経路に自動テストはありません）。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗するので、その場合は `test_svc_model.py` を直接指定してください。
 
 ONNX / OpenUTAU 書き出し（SVS のみ。実験的）:
 

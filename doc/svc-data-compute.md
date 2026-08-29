@@ -102,6 +102,8 @@ data/<dataset>/
 
 この表は現行 SVC 実装の peak VRAM 実測ではありません。AMP、gradient checkpointing、feature width、GAN、sequence length、PyTorch/CUDA version で変動します。
 
+**確認済み:** 現在の開発機は RTX 4070 Ti SUPER 16 GB（driver 596.21 / torch 2.13.0+cu130、詳細は [実装状況](svc-implementation-status.md) の「実行環境」表）です。上表の基準では target fine-tune は手元で回せる一方、multi-singer base pretraining の推奨基準 24 GB には届きません。**要ユーザー判断:** base を手元で回すために batch / crop を落とすか、外部 GPU を用意するかを M3 開始前に決めます。
+
 ## 7. batch 設計
 
 既存 canonical config の一例は `max_batch_frames: 240000`、`max_batch_size: 128`、`max_updates: 50000` です。一方、SVC 初期設定は保守的に次を使います。
@@ -124,7 +126,7 @@ gan.enabled: false
 | GPU class | 初期 PoC の大まかな期待 |
 |---|---|
 | RTX 3060 12 GB | 半日〜1 日程度の可能性 |
-| RTX 4070 Ti / Super | 数時間〜半日程度の可能性 |
+| RTX 4070 Ti / Super（**現在の開発機がこのクラス**） | 数時間〜半日程度の可能性 |
 | RTX 4090 | 数時間程度の可能性 |
 | A100 / H100 | PoC には過剰だが大規模 pretraining を短縮可能 |
 

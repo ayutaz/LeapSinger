@@ -25,6 +25,7 @@
 |---|---|
 | 済 | `HarmonicSVCModel`、`ContentAdapter`、`SVCFeatureDataset`、train/infer 配線、`configs/svc_base.yaml` |
 | 済 | 合成テンソルによる targeted test（shape、padding、alignment 検証、checkpoint 往復） |
+| 済 | 再現可能な開発環境（Python 3.13 固定、`uv.lock`、CUDA 版 torch の実機疎通確認） |
 | 未 | 実音声を 1 度も通していない。WAV も 1 本も出していない |
 
 **決定:** 実音声を通していない段階では、品質・速度に関する対外的な主張を行いません。
@@ -102,7 +103,7 @@ dataset ledger（権利・lineage・checksum）、split list、reject list、cov
 
 ### 前提・依存
 
-M0 完了。
+M0 完了。実行環境（Python 3.13 + CUDA 版 torch）は整備済みなので、この段階の障害は環境ではなくコードとデータのみです。
 
 ### 要ユーザー判断 / 未決
 
@@ -336,6 +337,7 @@ M5 通過。**決定:** M5 を通過していない teacher を基準に student
 - **飛ばさない。** M1 を経ずに M3 以降は実行できません（shard がないため物理的に不可能）。M5 を経ずに M6 を主目的にしません。
 - **上書きしない。** base checkpoint と fine-tune 成果物は別 `run_name` / 別ディレクトリに保存します。同じ `--run_name` で再実行すると `log/<run_name>/ckpt_*.pt` の最新から自動再開するため、別実験では必ず run 名を変えます。
 - **1 度に 1 要素。** ablation では同一 split・seed・更新 budget を使い、複数要素を同時に変えません。
+- **環境を固定する。** Python 3.13 と `uv.lock` を実験の一部として扱い、torch / CUDA / 依存を更新した run はその差分を実験記録に残します。環境差による品質差はモデル差と見分けがつきません。
 - **失敗を消さない。** failure clip は削除せず、category と suspected component を付けて残します。
 - **完了を宣言する条件。** 各マイルストーンは、コードの存在ではなくゴール節の判定材料が揃った時点で完了とします。完了時に [`svc-implementation-status.md`](svc-implementation-status.md) の検証済み / 未検証境界と [`svc.md`](svc.md) の完了レベルを同時に更新します。
 - **主張の範囲。** [先行研究・ライセンス・リスク](svc-prior-art-license.md) 6 節の主張ルールに従います。「世界初」「唯一」は使いません。「1-step」は acoustic flow の step 数であり、pipeline 全体の話ではありません。

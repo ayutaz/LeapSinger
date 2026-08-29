@@ -24,6 +24,9 @@
 | [`configs/svc_base.yaml`](../configs/svc_base.yaml) | SVC baseline config |
 | [`configs/3speaker_gan2d.yaml`](../configs/3speaker_gan2d.yaml) | 既存 SVS batch/update/GAN 設定の比較 |
 | [`test_svc_model.py`](../test_svc_model.py) | targeted verification の範囲 |
+| [`pyproject.toml`](../pyproject.toml) / [`uv.lock`](../uv.lock) / `.python-version` | Python 3.13 固定、CUDA wheel index、依存の解決結果 |
+| [`CLAUDE.md`](../CLAUDE.md) | コマンド、共有スタック、データ契約、既知の落とし穴 |
+| [`doc/svc-plan.md`](svc-plan.md) | M0〜M6 の実行計画と完了条件 |
 
 ## 3. 公式リポジトリ
 

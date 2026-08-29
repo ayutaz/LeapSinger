@@ -15,7 +15,10 @@
 | [`infer.py`](../infer.py) | SVC 推論を追加済み | 単一 item の mel inference |
 | [`configs/svc_base.yaml`](../configs/svc_base.yaml) | 追加済み | offline single-target 初期設定 |
 | [`test_svc_model.py`](../test_svc_model.py) | 追加済み | SVC model / dataset / wiring の targeted tests |
-| [`README.md`](../README.md) / [`README.en.md`](../README.en.md) | 更新済み | 実験的 SVC の入口と未実装境界 |
+| [`doc/svc-plan.md`](svc-plan.md) | 追加済み | M0〜M6 の実行計画（目的・ゴール・完了条件） |
+| [`CLAUDE.md`](../CLAUDE.md) | 追加済み | コマンド、共有スタック、SVC データ契約、既知の落とし穴 |
+| [`pyproject.toml`](../pyproject.toml) / [`uv.lock`](../uv.lock) / `.python-version` | 更新済み | Python 3.13 固定と CUDA 版 torch の解決を lock |
+| [`README.md`](../README.md) / [`README.en.md`](../README.en.md) | 更新済み | 実験的 SVC の入口と未実装境界、uv での環境構築 |
 
 既存 phoneme/duration SVS を置換せず、config で architecture を選びます。
 
@@ -82,9 +85,24 @@ uv run python -m train --config configs/svc_base.yaml `
 
 ## 5. 現在までの検証
 
+### 実行環境（確認済み）
+
+以下は `uv sync --extra train --extra export` で再現できる環境での実測です。
+
+| 項目 | 値 |
+|---|---|
+| Python | 3.13.13（`.python-version` と `requires-python = ">=3.13,<3.14"` の両方で固定） |
+| PyTorch | 2.13.0+cu130（`[[tool.uv.index]] pytorch-cu130` 経由。PyPI の Windows wheel は CPU ビルドのため index 指定が必須） |
+| CUDA | wheel build 13.0 / driver 596.21（CUDA 13.2 対応） |
+| GPU | NVIDIA GeForce RTX 4070 Ti SUPER 16 GB、compute capability 8.9、bf16 対応、cuDNN 9.2 |
+| 主要依存 | librosa 1.0.0、numpy 2.5.2、scipy 1.18.1、onnxruntime 1.29.0 |
+| 依存解決 | `uv.lock`（89 packages）をコミット済み |
+
+`torch.cuda.is_available()` が True で、2048×2048 の matmul が GPU 上で実行できること（5.22 ms/iter）まで確認しています。**これは環境の疎通確認であり、SVC 学習の throughput・peak VRAM の実測ではありません。**
+
 ### 確認済み
 
-- SVC targeted unit tests 10 件が成功。
+- SVC targeted unit tests 10 件が成功（上記環境の実 GPU マシン上）。
 - padding された frame が有効 frame に影響しないこと。
 - feature width / frame alignment の不正入力を拒否すること。
 - speaker-conditioned encoding の shape と分岐。
@@ -92,13 +110,14 @@ uv run python -m train --config configs/svc_base.yaml `
 - checkpoint から SVC model を再構築できること。
 - 単一 item inference と batch collate。
 - repository 内 53 Python file の AST parse。
+- `train` / `infer` / `svc_dataset` / `dataset` / `preprocess.run` / `export.cli` が上記環境で実際に import できること（AST parse より強い確認）。
 - `configs/svc_base.yaml` の YAML parse。
 - synthetic tensor による train/flow wiring smoke。
 - その時点の `git diff --check`。
 
 ### 制限付き
 
-全体の `unittest discover` は、借用した PyTorch environment に `librosa` がなく collection 時に停止しました。SVC targeted tests の成功と、repository 全 test suite の成功は区別します。
+`uv run python -m unittest discover` は上記環境で成功します（過去に記録した「借用環境に `librosa` がなく collection が停止する」問題は、uv 管理環境の導入で解消しました）。ただし top-level の `test_*.py` は `test_svc_model.py` の 1 本だけで、収集される 10 件は targeted tests と同一です。したがって **discover が通ることは repository 全体の振る舞いが検証済みであることを意味しません。** preprocess / export / 既存 SVS 経路には自動テストがありません。
 
 ### 未検証
 
