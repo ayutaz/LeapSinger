@@ -14,8 +14,8 @@ folders under a clean ASCII path so the preprocess recipes can find them:
     normal -> download/ritsu_normal/DATABASE/{song}/...
     soft   -> download/ritsu_soft/DATABASE/{song}/...
 
-    python preprocess/download_scripts/download_ritsu.py --voice kire
-    python preprocess/download_scripts/download_ritsu.py --voice all
+    uv run python preprocess/download_scripts/download_ritsu.py --voice kire
+    uv run python preprocess/download_scripts/download_ritsu.py --voice all
 """
 from __future__ import annotations
 

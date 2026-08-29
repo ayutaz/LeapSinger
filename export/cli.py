@@ -1,6 +1,6 @@
 """LeapSinger acoustic-model ONNX exporter.
 
-    python -m export.cli --ckpt log/3speaker_gan2d/ckpt_050000.pt --out export/3speaker \
+    uv run python -m export.cli --ckpt log/3speaker_gan2d/ckpt_050000.pt --out export/3speaker \
         --model-name leapsinger_oniku --variant diffsinger --hop 512      # fp32 (default)
     #   add --fp16 for a ~32% smaller file (lossless, but not faster on CPU; helps GPU/mobile)
 

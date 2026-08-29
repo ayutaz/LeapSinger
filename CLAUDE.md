@@ -15,14 +15,17 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
 
 ## コマンド
 
-**Python は `uv` 経由で実行します。**素の `python` / `pip`、および `uv pip` は使わないこと。依存の追加は必ず `uv add` です。
+**Python は `uv` 経由で実行します。**素の `python` / `pip`、および `uv pip` は使わないこと。依存の追加は必ず `uv add`、実行は必ず `uv run` です。
 
 環境構築:
 
     uv sync --extra train --extra export       # 依存を .venv へ（推論のみなら uv sync）
     uv add <package>                           # 依存を足すときは常に uv add（pyproject にも記録される）
+    uv add --optional train <package>          # extra に足すとき（train / export）
 
-PyTorch は CPU 版 / CUDA 版を環境に合わせて `uv add torch --index <PyTorch の wheel index>` で入れます。
+- Python は `.python-version` で **3.13** に固定しています。`pyproject.toml` の `requires-python` は `>=3.10,<3.14`（上限は librosa/numba 側の 3.14 未対応に合わせたもの）。
+- `uv.lock` はコミット対象です。依存を変えたら lock の差分も一緒にコミットすること。
+- **PyTorch は CUDA 版を pyproject が指定しています。** PyPI の Windows 版 torch は CPU ビルドなので、`[[tool.uv.index]] pytorch-cu130` + `[tool.uv.sources] torch` で PyTorch 公式 wheel index を明示しています。Windows / Linux は `uv sync` だけで GPU 版が入り、macOS は marker で PyPI（CPU/MPS）に落ちます。CUDA channel を変えるときは index の url（`cu126` / `cu128` / `cu130` / `cu132`）を書き換えて `uv lock` をやり直します。`uv add torch --index ...` を単発で打って pyproject の index 定義と食い違わせないこと。
 
 前処理（SVS のみ。データセット 1 つにつき recipe yaml が必要）:
 

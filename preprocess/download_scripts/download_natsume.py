@@ -7,8 +7,8 @@ names, and places the folders under a clean path the preprocess recipe expects:
     download/natsume/mono_label/{song}.lab      (lab = decimal seconds)
     download/natsume/xml/{song}.xml             (MusicXML)
 
-    python preprocess/download_scripts/download_natsume.py               # download from Drive
-    python preprocess/download_scripts/download_natsume.py --zip download/Natsume_Singing_DB_0713.zip   # local zip
+    uv run python preprocess/download_scripts/download_natsume.py               # download from Drive
+    uv run python preprocess/download_scripts/download_natsume.py --zip download/Natsume_Singing_DB_0713.zip   # local zip
 """
 from __future__ import annotations
 

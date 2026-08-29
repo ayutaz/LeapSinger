@@ -76,16 +76,21 @@ The pseudo-mel lets you tune the harmonic decay, the number of harmonics, and th
 
 ### Setup
 
-Python 3.10 or later. Clone the repository and do an editable install.
+Python 3.13 (pinned in `.python-version`; 3.10-3.13 all work). Dependencies and execution go through [uv](https://docs.astral.sh/uv/).
 
     git clone https://github.com/wavtechyukky/LeapSinger
     cd LeapSinger
-    pip install -e .                  # inference, re-synthesis, notebooks
-    pip install -e ".[train]"         # training (adds TensorBoard)
-    pip install -e ".[export]"        # ONNX export
-    pip install -e ".[train,export]"  # everything
+    uv sync                               # inference, re-synthesis, notebooks
+    uv sync --extra train                 # training (adds TensorBoard)
+    uv sync --extra export                # ONNX export
+    uv sync --extra train --extra export  # everything
 
-- **PyTorch** is best installed to match your environment (CPU or CUDA build). To train on GPU, install the CUDA build following the [PyTorch site](https://pytorch.org/).
+Run Python with `uv run python ...` and add dependencies with `uv add <package>` (do not use bare `python` / `pip`, or `uv pip`). `uv sync` fetches the interpreter named in `.python-version` and builds `.venv/` exactly as resolved in `uv.lock`.
+
+- **PyTorch** is pinned to the CUDA wheel index (cu130) via `[[tool.uv.index]]` in `pyproject.toml`, so `uv sync` alone installs the GPU build on Windows / Linux (the Windows `torch` on PyPI is a CPU build, hence the explicit index). To use a different CUDA, change `cu130` in that url to `cu126` / `cu128` / `cu132` and re-run `uv lock`. On macOS a marker falls back to the CPU/MPS build from PyPI.
+- To check the GPU is visible:
+
+      uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 - **F0 extraction (RMVPE)** weights download automatically on first run (HuggingFace → `preprocess/algorithms/rmvpe.pt`).
 - **The vocoder (NHVSing)** is bundled as ONNX under `checkpoints/`; no extra download is needed.
 - **The acoustic model itself is distributed via Releases** (not included in the repo).
@@ -108,13 +113,13 @@ The Japanese phoneme list is in `dict/ja.phonemes` (one phoneme per line, the or
 
 Prepare one YAML per dataset (`configs/recipes/<db>.yaml`). Each song uses an audio `wav` and a `.lab` with phoneme timing (plus a score). The following command produces preprocessed data under `data/<db>/`.
 
-    python -m preprocess.run --recipe configs/recipes/<db>.yaml
+    uv run python -m preprocess.run --recipe configs/recipes/<db>.yaml
 
 The three databases used in the examples can be downloaded with these scripts (please follow each database's terms of use).
 
-    python preprocess/download_scripts/download_oniku.py
-    python preprocess/download_scripts/download_natsume.py
-    python preprocess/download_scripts/download_ritsu.py
+    uv run python preprocess/download_scripts/download_oniku.py
+    uv run python preprocess/download_scripts/download_natsume.py
+    uv run python preprocess/download_scripts/download_ritsu.py
 
 F0 is extracted with RMVPE. (Please do not run RMVPE across multiple processes.)
 
@@ -122,7 +127,7 @@ F0 is extracted with RMVPE. (Please do not run RMVPE across multiple processes.)
 
 Training has two stages. The first stage learns the base voice with a flow loss plus a mel loss; the second stage turns on a GAN to sharpen texture. (This is set in the config's `gan` section; `gan.enabled: false` gives the flow loss plus mel loss only.)
 
-    python -m train --config configs/<name>.yaml \
+    uv run python -m train --config configs/<name>.yaml \
       --data_dirs data/<db> [data/<db2> ...] \
       --run_name <name> --out_root log --device cuda
 
@@ -130,7 +135,7 @@ Running the same command again automatically resumes from where it stopped.
 
 ### Export
 
-    python -m export.cli \
+    uv run python -m export.cli \
       --ckpt log/<run>/ckpt_050000.pt \
       --out export/<name> --model-name <name> \
       --variant diffsinger --hop 512 --speaker embed

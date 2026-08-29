@@ -5,8 +5,8 @@ names, and places the songs under a clean path the preprocess recipe expects:
 
     download/oniku/{song}/{song}.{wav,lab,musicxml, ...}   (lab = HTS 100ns)
 
-    python preprocess/download_scripts/download_oniku.py                 # download from Drive
-    python preprocess/download_scripts/download_oniku.py --zip download/ONIKU_KURUMI_UTAGOE_DB.zip   # use a local zip
+    uv run python preprocess/download_scripts/download_oniku.py                 # download from Drive
+    uv run python preprocess/download_scripts/download_oniku.py --zip download/ONIKU_KURUMI_UTAGOE_DB.zip   # use a local zip
 """
 from __future__ import annotations
 

@@ -64,7 +64,7 @@ def fetch_zips(drive_id: str, work_dir: Path, *, is_folder: bool = False,
     try:
         import gdown
     except ImportError:
-        raise SystemExit("gdown is required: pip install gdown")
+        raise SystemExit("gdown is required: uv add gdown")
 
     if is_folder:
         gdown.download_folder(id=drive_id, output=str(work_dir), quiet=False, use_cookies=False)

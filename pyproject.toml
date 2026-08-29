@@ -3,7 +3,7 @@ name = "leapsinger"
 version = "0.1.0"
 description = "Fast singing acoustic model: a sine-harmonic + white-noise excitation mel is refined into a realistic mel by a rectified flow (few reverse steps)."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 license = { text = "MIT" }
 dependencies = [
     "torch>=2.0",
@@ -42,3 +42,20 @@ train = [
 
 [tool.setuptools.packages.find]
 include = ["leapsinger*"]
+
+# ── uv: PyTorch を CUDA 版で入れる ────────────────────────────────────────
+# PyPI の Windows 版 torch は CPU ビルドなので、CUDA を使うには PyTorch 公式の
+# wheel index を明示的に指定する必要がある。cu130 (CUDA 13.0) wheel は CUDA 13.x
+# 系のドライバ（NVIDIA driver >= 580 相当）で動く。
+#   別の CUDA に変えるとき: 下の url の cu130 を cu126 / cu128 / cu132 などに差し替え、
+#   `uv lock` をやり直す。channel 一覧は https://download.pytorch.org/whl/ を参照。
+# macOS は該当 index に wheel がないので、marker で PyPI (CPU/MPS ビルド) に落とす。
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu130", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]

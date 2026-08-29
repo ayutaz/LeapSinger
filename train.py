@@ -5,7 +5,7 @@ a lightweight mel-spectrogram discriminator (GAN) is switched on partway through
 texture. The schedule — when the GAN turns on, its strength, and so on — is set in the config's
 `gan:` section; with `gan.enabled: false` it is plain flow + reconstruction training.
 
-    python -m train --config configs/3speaker_gan2d.yaml \
+    uv run python -m train --config configs/3speaker_gan2d.yaml \
         --data_dirs data/oniku data/natsume data/ritsu \
         --run_name 3speaker_gan2d --out_root log --device cuda
 

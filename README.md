@@ -76,16 +76,21 @@ CPUで計測したRTF（Real-Time Factor。小さいほど速く、1未満なら
 
 ### 環境構築
 
-Python 3.10 以上。リポジトリを clone して editable install します。
+Python 3.13（`.python-version` で固定。3.10〜3.13 で動きます）。依存の管理と実行は [uv](https://docs.astral.sh/uv/) に統一しています。
 
     git clone https://github.com/wavtechyukky/LeapSinger
     cd LeapSinger
-    pip install -e .                  # 推論・再合成・ノートブック
-    pip install -e ".[train]"         # 学習（TensorBoard を追加）
-    pip install -e ".[export]"        # ONNX 書き出し
-    pip install -e ".[train,export]"  # 全部入り
+    uv sync                               # 推論・再合成・ノートブック
+    uv sync --extra train                 # 学習（TensorBoard を追加）
+    uv sync --extra export                # ONNX 書き出し
+    uv sync --extra train --extra export  # 全部入り
 
-- **PyTorch** は環境に合わせて入れるのが確実です（CPU版 / CUDA版）。GPU で学習するなら [PyTorch 公式](https://pytorch.org/) の手順で CUDA 版を入れてください。
+Python の実行は `uv run python ...`、依存の追加は `uv add <package>` です（素の `python` / `pip`、`uv pip` は使いません）。`uv sync` は `.python-version` の Python を自動で用意し、`uv.lock` の解決結果どおりに `.venv/` を作ります。
+
+- **PyTorch** は `pyproject.toml` の `[[tool.uv.index]]` で CUDA 版 wheel（cu130）を指定しているので、Windows / Linux では `uv sync` だけで GPU 版が入ります（PyPI の Windows 版 torch は CPU ビルドのため、この指定が必要です）。別の CUDA を使うときは url の `cu130` を `cu126` / `cu128` / `cu132` などに差し替えて `uv lock` をやり直してください。macOS は marker で PyPI の CPU/MPS ビルドに落ちます。
+- GPU が見えているかは次で確認できます。
+
+      uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 - **F0抽出（RMVPE）** の重みは初回実行時に自動ダウンロードされます（HuggingFace → `preprocess/algorithms/rmvpe.pt`）。
 - **ボコーダー（NHVSing）** は `checkpoints/` に ONNX 同梱済みで、追加ダウンロード不要です。
 - 学習・配布用の**音響モデル本体は Release で配布**しています（リポには含みません）。
@@ -108,13 +113,13 @@ Python 3.10 以上。リポジトリを clone して editable install します�
 
 データセット1つにつき、yaml（`configs/recipes/<db>.yaml`）を用意します。1曲あたり、音声 `wav` と音素タイミングの `.lab`（＋譜面）を使います。次のコマンドで `data/<db>/` に前処理済みのデータができます。
 
-    python -m preprocess.run --recipe configs/recipes/<db>.yaml
+    uv run python -m preprocess.run --recipe configs/recipes/<db>.yaml
 
 例に使った3つのデータベースは、次のスクリプトでダウンロードできます（各DBの規約に従ってご利用ください）。
 
-    python preprocess/download_scripts/download_oniku.py
-    python preprocess/download_scripts/download_natsume.py
-    python preprocess/download_scripts/download_ritsu.py
+    uv run python preprocess/download_scripts/download_oniku.py
+    uv run python preprocess/download_scripts/download_natsume.py
+    uv run python preprocess/download_scripts/download_ritsu.py
 
 F0の抽出にはRMVPEを使います（RMVPEはマルチプロセスで動かさないようご注意ください）。
 
@@ -122,7 +127,7 @@ F0の抽出にはRMVPEを使います（RMVPEはマルチプロセスで動か�
 
 学習は2段構成です。前半は flow損失＋mel損失で土台の声を学習し、後半で GAN を入れて質感を鮮明化します（切り替えは config の `gan` セクションで設定。`gan.enabled: false` なら flow損失＋mel損失のみ）。
 
-    python -m train --config configs/<name>.yaml \
+    uv run python -m train --config configs/<name>.yaml \
       --data_dirs data/<db> [data/<db2> ...] \
       --run_name <name> --out_root log --device cuda
 
@@ -130,7 +135,7 @@ F0の抽出にはRMVPEを使います（RMVPEはマルチプロセスで動か�
 
 ### export
 
-    python -m export.cli \
+    uv run python -m export.cli \
       --ckpt log/<run>/ckpt_050000.pt \
       --out export/<name> --model-name <name> \
       --variant diffsinger --hop 512 --speaker embed
