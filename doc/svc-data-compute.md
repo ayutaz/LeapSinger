@@ -1,0 +1,141 @@
+# SVC データセットと計算資源
+
+この文書の時間・GPU・学習所要時間は、実測前の計画値です。モデル品質やメモリ使用量の確認結果として扱わないでください。
+
+## 1. 理想的な音声条件
+
+| 項目 | 推奨 |
+|---|---|
+| format | mono PCM WAV、16-bit または 24-bit |
+| sample rate | 44.1 kHz または 48 kHz。前処理で 44.1 kHz へ統一 |
+| source | isolated vocal。元から単独収録が最良 |
+| room / effects | reverb、delay、chorus、compression が少ない |
+| quality | clipping、dropout、強い定常 noise がない |
+| content | 歌唱中心。speech、歓声、重なり声は別管理 |
+
+Demucs 等で分離した stem も候補ですが、伴奏 leakage、位相 artifact、残響が target timbre として学習される危険があります。元の isolated vocal と分離 stem は dataset tag を分け、同じ test set へ混在させません。
+
+## 2. target singer の量
+
+**見積もり:**
+
+| usable singing | 目的・期待 |
+|---:|---|
+| 30 分〜1 時間 | pipeline の PoC。品質判断には不足 |
+| 2〜3 時間 | target fine-tune の初期比較 |
+| **5〜10 時間** | 実用品質を狙う最初の推奨範囲 |
+| 10〜20 時間 | 音域・発声の安定性を高める |
+| 20〜30 時間以上 | 多様な style を同一 target で扱う |
+
+時間より coverage が重要です。最低限、次を集計します。
+
+- low / mid / high pitch と各 pitch の滞在時間
+- chest / head / falsetto、強声 / 弱声、breathy voice
+- voiced / unvoiced、子音の種類、速い歌唱
+- long tone、vibrato、pitch slide、しゃくり
+- 曲、収録日、マイク、部屋、処理 chain
+
+5 時間あっても中音域の同じ歌い方だけなら、高音裏声や強い子音で崩れます。逆に短くても coverage が良いデータは PoC に有効です。
+
+## 3. multi-singer 事前学習量
+
+**見積もり:**
+
+| 合計 singing | 用途 |
+|---:|---|
+| 10〜30 時間 | multi-singer 配線の PoC |
+| 50〜100 時間 | base pretraining の最低推奨候補 |
+| 100〜300 時間 / 20〜50 人 | 現実的な最初の本学習案 |
+| 200〜500 時間 | より強い汎化を狙う構成 |
+| 500〜1,000 時間 | 大規模 base |
+| 1,000 時間以上 | 汎用性を広げる大規模研究 |
+
+人数、性別、音域、言語、録音条件の多様性を確保します。ただし diversity のために権利や品質の不明なデータを混ぜません。
+
+平行データは必須ではありません。各歌手の `content + F0 + loudness -> その歌手の mel` を speaker condition 付きで自己再構成し、話者に依存しにくい変換器を学習します。
+
+## 4. split と leakage 防止
+
+- phrase のランダム分割だけでなく、曲単位で test を分離する。
+- 同じ take を切り分けた断片を train と test に跨がせない。
+- source separation 前後の同一音源を別 split に置かない。
+- target test song は fine-tune、early stopping、threshold 調整に使わない。
+- 未知 source singer の test set を別に用意する。
+- duplicate / near-duplicate を audio fingerprint 等で検査する。
+
+## 5. 前処理成果物
+
+現在の loader 契約では、dataset directory ごとに以下を置きます。
+
+```text
+data/<dataset>/
+  metadata.json
+  svc_shard.npz
+```
+
+`metadata.json` は既存の `phrases` map（phrase name -> mel frames）と `content_dim` を記録します。`svc_shard.npz` には phrase ごとに以下の key を置きます。
+
+| key | shape |
+|---|---:|
+| `<name>|content` | `[T, content_dim]` |
+| `<name>|f0_interp` | `[T]` |
+| `<name>|uv` | `[T]` |
+| `<name>|loudness` | `[T]` |
+| `<name>|mel` | `[128, T]` |
+
+すべての `T` は完全一致させます。loader は silent transpose や自動補間をせず、前処理ミスを明示的に失敗させます。
+
+**未実装:** WAV からこの shard を再現可能に生成する repository 内 command。実装時は encoder/model revision、layer、checksum、sample rate、hop、loudness 定義、F0 extractor version を manifest に保存します。
+
+## 6. GPU メモリの目安
+
+**見積もり:**
+
+| VRAM | 想定 |
+|---:|---|
+| 8 GB | very small batch / short crop の smoke。調整負担が大きい |
+| 12 GB | PoC は可能 |
+| **16 GB** | target fine-tune の現実的な基準 |
+| **24 GB** | multi-singer base の推奨基準 |
+| 32〜48 GB | 長い crop、大きい batch、teacher/student 同時処理に余裕 |
+| 80 GB | PoC には不要。大規模化・高速化用 |
+
+この表は現行 SVC 実装の peak VRAM 実測ではありません。AMP、gradient checkpointing、feature width、GAN、sequence length、PyTorch/CUDA version で変動します。
+
+## 7. batch 設計
+
+既存 canonical config の一例は `max_batch_frames: 240000`、`max_batch_size: 128`、`max_updates: 50000` です。一方、SVC 初期設定は保守的に次を使います。
+
+```yaml
+max_batch_frames: 30000
+max_batch_size: 16
+max_updates: 20000
+gan.enabled: false
+```
+
+**重要:** 既存 config に `accum_steps: 2` があっても、現行 `train.py` は gradient accumulation を実装していません。したがって「30k frames × accumulation 8 = effective 240k」という案は、accumulation 実装・テスト後にのみ有効です。
+
+16 GB GPU の初回探索では `max_batch_frames` 30k から始め、OOM と peak memory を記録しながら 60k まで段階的に上げる案を推奨します。
+
+## 8. 学習時間の目安
+
+**未検証見積もり:** 小規模 target fine-tune の所要時間は、データ長、更新回数、feature cache、GAN の有無で大きく変わります。
+
+| GPU class | 初期 PoC の大まかな期待 |
+|---|---|
+| RTX 3060 12 GB | 半日〜1 日程度の可能性 |
+| RTX 4070 Ti / Super | 数時間〜半日程度の可能性 |
+| RTX 4090 | 数時間程度の可能性 |
+| A100 / H100 | PoC には過剰だが大規模 pretraining を短縮可能 |
+
+計画値として固定せず、最初の 100 / 1,000 update で examples/sec、frames/sec、peak VRAM、checkpoint size、validation time を計測して再見積もりします。
+
+## 9. 保存すべきデータ台帳
+
+- dataset 名、version、入手元、権利、許可用途、配布可否
+- singer ID、曲 ID、take ID、収録条件
+- original / separated / denoised の lineage
+- checksum と preprocessing manifest
+- reject reason と除外前後の時間
+- split 作成 seed と split list
+- pitch / loudness / duration の分布

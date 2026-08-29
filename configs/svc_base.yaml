@@ -1,0 +1,58 @@
+# Offline target-singer SVC base configuration.
+# Input SSL/F0/loudness features must already exist in data/<db>/svc_shard.npz;
+# see doc/svc.md. Start with flow + reconstruction before enabling the GAN.
+mel:
+  sr: 44100
+  hop: 256
+  n_fft: 2048
+  win: 2048
+  n_mels: 128
+  fmin: 40.0
+  fmax: 16000.0
+model:
+  arch: svc
+  content_dim: 768
+  content_layers: 2
+  content_dropout: 0.1
+  hidden: 256
+  backbone_ch: 256
+  n_cycles: 3
+  dilation_schedule: pow2_15
+  n_speakers: 1
+  spk_dim: 32
+  n_styles: 0
+  use_uv: true
+  flow_loss: l2
+  mel_vmin: -11.5
+  mel_vmax: 2.0
+excitation:
+  n_harm: 256
+  noise_ratio: 0.05
+  exc_scale: 0.15
+  harm_decay: 1.0
+train:
+  lr: 8.0e-4
+  grad_clip: 1.0
+  optimizer: radam
+  max_updates: 20000
+  max_batch_frames: 30000
+  max_batch_size: 16
+  recon_weight: 0.5
+  flow_loss: l2
+  num_steps: 1
+  save_interval: 1000
+  log_interval: 50
+  eval_interval: 500
+  eval_items: 3
+  vocoder: checkpoints/nhv_v3.onnx
+  num_workers: 2
+  pitch_aug: false
+  balance_speakers: false
+gan:
+  enabled: false
+  d_type: mel2d
+  cond: speaker
+data:
+  eval_songs: 2
+  min_sec: 0.3
+

@@ -170,6 +170,19 @@ Two NHVSing vocoders are bundled under `checkpoints/`.
 
 ## Future work
 
+### Experimental SVC development
+
+The `feature/svc` branch is developing an offline singing-voice-conversion model that
+drives the existing harmonic excitation and rectified flow from precomputed content
+features, F0, V/UV, and loudness. The existing phoneme + duration synthesis path remains
+unchanged.
+
+The model, feature-shard contract, and training/evaluation wiring are implemented. The
+ContentVec/HuBERT + RMVPE preprocessing command and the real-time student are not yet
+implemented. The Japanese research suite covering requirements, architecture, data/GPU,
+training, evaluation, prior art/licensing, implementation status, and sources is indexed at
+[doc/svc.md](doc/svc.md).
+
 - **Multilingual support** — so far we validate with Japanese data, but the design itself is language-independent. We plan to support other languages with their own phoneme dictionaries and data, aiming for a single model that can handle multiple languages.
 - **Higher quality** — we think there is still room to improve speaker fidelity, for example by refining how the pseudo-mel is generated and tuning its parameters.
 - **Verifying OpenUTAU on real hardware** — the OpenUTAU export is provided, but we have not verified it on an actual OpenUTAU install. We plan to test it for real.

@@ -1,0 +1,68 @@
+# SVC 調査の出典一覧
+
+調査日: 2026-08-30
+
+## 1. 証拠の扱い
+
+1. ローカルの実装・設定・テスト結果を、現在のブランチ状態の根拠とします。
+2. 論文、公式 repository、作者 README を技術仕様・ライセンスの一次資料として優先します。
+3. データ量、GPU、学習時間は一次資料で実証された本実装の値ではないため「見積もり」とします。
+4. 以前の ChatGPT 会話は要求・仮説の回収に使い、事実の最終根拠にはしません。
+
+## 2. ローカル根拠
+
+| 対象 | 確認内容 |
+|---|---|
+| [`README.md`](../README.md) | 既存 SVS 入力、harmonic/noise pseudo mel、1-step、作者 RTF、多話者/style/OpenUTAU、license boundary |
+| [`README.en.md`](../README.en.md) | 英語版の同一説明と SVC 入口 |
+| [`LICENSE`](../LICENSE) | LeapSinger code の MIT license |
+| [`leapsinger/models/svc.py`](../leapsinger/models/svc.py) | SVC model の実装境界 |
+| [`leapsinger/modules/encoders/content_adapter.py`](../leapsinger/modules/encoders/content_adapter.py) | SVC condition adapter |
+| [`svc_dataset.py`](../svc_dataset.py) | shard contract と validation |
+| [`train.py`](../train.py) | architecture selection、学習・評価 wiring |
+| [`infer.py`](../infer.py) | SVC single-item inference |
+| [`configs/svc_base.yaml`](../configs/svc_base.yaml) | SVC baseline config |
+| [`configs/3speaker_gan2d.yaml`](../configs/3speaker_gan2d.yaml) | 既存 SVS batch/update/GAN 設定の比較 |
+| [`test_svc_model.py`](../test_svc_model.py) | targeted verification の範囲 |
+
+## 3. 公式リポジトリ
+
+- [wavtechyukky repositories](https://github.com/wavtechyukky?tab=repositories) — 作者の現在の公開 repository 一覧。
+- [LeapSinger](https://github.com/wavtechyukky/LeapSinger) — architecture、features、RTF、license note。
+- [NHVSing](https://github.com/wavtechyukky/NHVSing) — vocoder variants、mel format、code / weight license note。
+- [pyshiro](https://github.com/wavtechyukky/pyshiro) — HSMM/HMM alignment と GPL-3.0。
+- [realigned-singing-labels](https://github.com/wavtechyukky/realigned-singing-labels) — label 内容と音声非同梱。
+- [pitch-benchmark](https://github.com/wavtechyukky/pitch-benchmark) — pitch extractor comparison。
+- [Seed-VC](https://github.com/Plachtaa/seed-vc) — SVC baseline、model variants、steps、GPL-3.0、archive state。
+- [RIFT-SVC](https://github.com/Pur1zumu/RIFT-SVC) — rectified-flow SVC の公開実装例。
+- [DDSP-SVC](https://github.com/yxlllc/DDSP-SVC) — differentiable-DSP SVC の公開実装例。
+
+## 4. 論文
+
+- Qian et al., [ContentVec: An Improved Self-Supervised Speech Representation by Disentangling Speakers](https://proceedings.mlr.press/v162/qian22b.html), ICML 2022.
+- Wei et al., [RMVPE: A Robust Model for Vocal Pitch Estimation in Polyphonic Music](https://www.isca-archive.org/interspeech_2023/wei23b_interspeech.html), Interspeech 2023.
+- Plachta et al., [Seed-VC: High-Quality Zero-shot Voice Conversion and Singing Voice Conversion](https://arxiv.org/abs/2411.09943), 2024.
+- [DAFMSVC](https://arxiv.org/abs/2508.05978) — flow-matching SVC の先行例。
+- [Poly-SVC](https://arxiv.org/abs/2605.12310) — polyphonic SVC と harmonic modelling の先行例。
+- [Singing Voice Conversion with Disentangled Representations of Singer and Vocal Technique Using Variational Autoencoders](https://arxiv.org/abs/2201.10130) — source-filter / harmonic signal を使う SVC の関連例。
+- Liu et al., [The Neural Homomorphic Vocoder](https://www.isca-archive.org/interspeech_2020/liu20_interspeech.html), Interspeech 2020.
+
+## 5. 調査から導いたもの
+
+次は一次資料の引用値ではなく、このプロジェクト向けの判断です。
+
+- target singer 5〜10 時間を最初の推奨範囲とすること。
+- multi-singer 20〜50 人 / 100〜300 時間を現実的な base 案とすること。
+- 16 GB を target fine-tune、24 GB を base pretraining の基準とすること。
+- offline teacher を先に作り、quality gate 後に streaming student を蒸留すること。
+- Seed-VC を code dependency ではなく外部 baseline とすること。
+
+これらは [データセットと計算資源](svc-data-compute.md)、[学習計画](svc-training.md)、[評価計画](svc-evaluation.md) の実験で更新します。
+
+## 6. 更新ルール
+
+- web source は URL とアクセス日を残す。
+- GitHub の branch head ではなく、再現実験時は commit hash / release tag を固定する。
+- model weight の license は repository code license から推測しない。
+- benchmark 数値は dataset、metric、pre/postprocess を併記する。
+- 実装変更時は [実装状況](svc-implementation-status.md) と索引の完了レベルを同時に更新する。

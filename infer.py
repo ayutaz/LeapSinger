@@ -19,11 +19,12 @@ import torch
 
 from leapsinger.models.acoustic import (HarmonicAcousticModel,
                                        HarmonicAcousticModelMultiSpk)
+from leapsinger.models.svc import HarmonicSVCModel
 
 
 def _build_from_config(cfg: dict, device):
     common = dict(
-        n_phonemes=cfg["n_phonemes"], hidden=cfg.get("hidden", 256),
+        hidden=cfg.get("hidden", 256),
         mel_bins=cfg["mel_bins"], mel_vmin=cfg.get("mel_vmin", -11.5),
         mel_vmax=cfg.get("mel_vmax", 2.0), backbone_ch=cfg.get("backbone_ch", 256),
         n_cycles=cfg.get("n_cycles", 3), dilation_schedule=cfg.get("dilation_schedule", "pow2_15"),
@@ -35,11 +36,21 @@ def _build_from_config(cfg: dict, device):
         noise_ratio=cfg.get("noise_ratio", 0.05), exc_scale=cfg.get("exc_scale", 0.15),
         harm_decay=cfg.get("harm_decay", 1.0), exc_hop=cfg.get("exc_hop", cfg.get("hop", 256)),
     )
-    if cfg.get("arch") == "harmonic_multispk":
+    if cfg.get("arch") == "harmonic_svc":
+        model = HarmonicSVCModel(
+            **common, **harm, content_dim=cfg["content_dim"],
+            content_layers=cfg.get("content_layers", 2),
+            content_dropout=cfg.get("content_dropout", 0.1),
+            n_speakers=cfg.get("n_speakers", 0), spk_dim=cfg.get("spk_dim", 0),
+        )
+    elif cfg.get("arch") == "harmonic_multispk":
         model = HarmonicAcousticModelMultiSpk(
-            **common, **harm, n_speakers=cfg["n_speakers"], spk_dim=cfg["spk_dim"])
+            **common, **harm, n_phonemes=cfg["n_phonemes"],
+            n_speakers=cfg["n_speakers"], spk_dim=cfg["spk_dim"])
     else:
-        model = HarmonicAcousticModel(**common, **harm, n_speakers=cfg.get("n_speakers", 0))
+        model = HarmonicAcousticModel(
+            **common, **harm, n_phonemes=cfg["n_phonemes"],
+            n_speakers=cfg.get("n_speakers", 0))
     return model.to(device)
 
 
@@ -74,6 +85,49 @@ def infer_mel(model, item: dict, num_steps: int = 10, device: str = "cpu", seed:
     if hasattr(model, "spk_bank") or getattr(model, "spk_emb", None) is not None:
         kw["spk_id"] = torch.tensor([int(item.get("spk_id", 0))], device=dev)
     if getattr(model, "style_emb", None) is not None:
+        kw["style_id"] = torch.tensor([int(item.get("style_id", 0))], device=dev)
+    mel = model.infer(**kw)
+    return mel[0].cpu().numpy()
+
+
+@torch.no_grad()
+def infer_svc_mel(model, item: dict, num_steps: int = 1,
+                  device: str = "cpu", seed: int = 0):
+    """Run a HarmonicSVCModel on one frame-aligned feature item.
+
+    Required keys are ``content`` [T,C], ``f0_logf0`` [T], ``uv`` [T], and
+    ``loudness`` [T]. Content encoder and pitch extractor execution deliberately
+    live outside this function so the same contract can serve offline training
+    and a future streaming frontend.
+    """
+    if not isinstance(model, HarmonicSVCModel):
+        raise TypeError("infer_svc_mel requires HarmonicSVCModel")
+    torch.manual_seed(seed)
+    dev = torch.device(device)
+
+    content = np.asarray(item["content"], dtype=np.float32)
+    if content.ndim != 2:
+        raise ValueError(f"item['content'] must be [T,C], got {content.shape}")
+    frames = content.shape[0]
+
+    def frame(name):
+        value = np.asarray(item[name], dtype=np.float32).reshape(-1)
+        if len(value) != frames:
+            raise ValueError(f"item['{name}'] must have {frames} frames, got {len(value)}")
+        return torch.as_tensor(value, device=dev)[None]
+
+    kw = dict(
+        content_features=torch.as_tensor(content, device=dev)[None],
+        f0_logf0=frame("f0_logf0"),
+        uv=frame("uv"),
+        loudness=frame("loudness"),
+        n_frames=frames,
+        num_steps=num_steps,
+        algorithm="euler",
+    )
+    if model.spk_n > 0:
+        kw["spk_id"] = torch.tensor([int(item.get("spk_id", 0))], device=dev)
+    if model.style_emb is not None:
         kw["style_id"] = torch.tensor([int(item.get("style_id", 0))], device=dev)
     mel = model.infer(**kw)
     return mel[0].cpu().numpy()
