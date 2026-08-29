@@ -1,0 +1,66 @@
+# LeapSinger phoneme vocabulary — Japanese (default).
+#
+# One phoneme per line; the line order defines the integer id (first line = id 0).
+# Blank lines and text after '#' are ignored. id 0 MUST be the silence / pad token 'pau'.
+#
+# To train on another language, copy this file, replace the phoneme set, and pass it with
+# `--phonemes <path>` to `preprocess.run` and `train` (the list is also stored in the
+# checkpoint so export / inference reconstruct it automatically).
+
+pau                 # 0: silence / pad
+
+# vowels (lowercase = voiced, UPPERCASE = devoiced)
+a
+i
+u
+e
+o
+A
+I
+U
+E
+O
+
+N                   # moraic nasal (ん)
+
+# consonants
+k
+ky
+g
+gy
+s
+sh
+z
+j
+t
+ts
+ch
+ty
+d
+dy
+n
+ny
+h
+hy
+f
+fy
+b
+by
+p
+py
+m
+my
+y
+r
+ry
+w
+v
+
+# special
+cl                  # geminate / closure (っ)
+GlottalStop         # glottal stop (vowel re-attack)
+Edge                # edge / creaky voice
+br                  # breath
+h_end               # phrase-final h
+cl_end              # phrase-final cl
+EP                  # phrase-final independent vowel

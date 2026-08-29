@@ -1,0 +1,93 @@
+# Three-speaker singing model with voice styles and voiced/unvoiced conditioning.
+#   speakers : Oniku Kurumi (0) / Natsume Yuuri (1) / Namine Ritsu (2)
+#   styles   : Namine Ritsu carries three styles — default (0) / normal (1) / soft (2);
+#              the other singers use the default style. Blend styles continuously at inference.
+#   use_uv   : the voiced/unvoiced flag is fed as a condition.
+# Same two-stage schedule as 3speaker_gan2d: flow + reconstruction to 20k, then a mel-spectrogram
+# discriminator (GAN) from 20k through 50k.
+#
+#   python -m train --config configs/3singer_ritsu3style_uv_gan2d.yaml \
+#       --data_dirs /path/to/oniku /path/to/natsume /path/to/ritsu \
+#                   /path/to/ritsu_normal /path/to/ritsu_soft \
+#       --run_name 3singer_ritsu3style_uv_gan2d --out_root <log> --device cuda
+#   (Do not pass --init_from/--finetune; training starts from scratch and auto-resumes on re-run.)
+mel:
+  sr: 44100
+  hop: 256
+  n_fft: 2048
+  win: 2048
+  n_mels: 128
+  fmin: 40.0
+  fmax: 16000.0
+model:
+  hidden: 256
+  backbone_ch: 256
+  n_cycles: 3
+  dilation_schedule: pow2_15
+  encoder_type: attn
+  spk_dim: 32
+  n_speakers: 3
+  n_styles: 3             # style 0 = default, 1 = ritsu-normal, 2 = ritsu-soft
+  use_uv: true            # feed the voiced/unvoiced flag as a condition
+  flow_loss: l2
+  mel_vmin: -11.5
+  mel_vmax: 2.0
+excitation:
+  n_harm: 256
+  noise_ratio: 0.05
+  exc_scale: 0.15
+  harm_decay: 1.0
+train:
+  lr: 8.0e-4
+  grad_clip: 1.0
+  optimizer: radam
+  max_updates: 50000      # 20k base + 30k GAN
+  max_batch_frames: 240000
+  max_batch_size: 128
+  accum_steps: 2          # ignored by train.py (no accumulation); kept for compatibility
+  recon_weight: 0.5
+  flow_loss: l2
+  num_steps: 1
+  save_interval: 1000
+  log_interval: 50
+  eval_interval: 500
+  eval_items: 5           # one per (speaker × style) unit
+  vocoder: checkpoints/nhv_v3.onnx
+  num_workers: 4
+  pitch_aug: false
+  balance_by: db          # sample each (speaker × style) unit equally
+gan:
+  enabled: true
+  d_type: mel2d           # 2D mel discriminator
+  d_spectral_norm: true   # spectral norm on every conv (stabilizes training)
+  cond: speaker           # discriminator conditions on speaker (style is on the generator only)
+  d_lr: 2.0e-4
+  d_betas: [0.5, 0.9]
+  window: 64
+  adv_weight: 1.0
+  fm_dynamic: false
+  fm_weight: 2.0
+  gan_start_step: 20000   # GAN off before this step (flow + recon only)
+  d_warmup_steps: 1000    # let the discriminator warm up first
+  gan_ramp_steps: 2000    # then ramp the adversarial term 0 -> 1
+  d_gate_floor: 0.3
+  adaptive_adv: true
+  gan_strength: 0.5       # scale on the adversarial gradient; raise if stable, lower if it diverges
+  grad_cap: 1.0
+data:
+  spk_map:
+    oniku: 0
+    natsume: 1
+    ritsu: 2
+    ritsu_normal: 2       # same speaker as ritsu (2), different style
+    ritsu_soft: 2
+  style_map:
+    oniku: 0
+    natsume: 0
+    ritsu: 0              # default style
+    ritsu_normal: 1
+    ritsu_soft: 2
+  eval_songs: 2           # songs held out per speaker for evaluation
+  min_sec: 0.3
+  silence: true
+  silence_fade_sec: 0.05

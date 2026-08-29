@@ -1,0 +1,19 @@
+# Recipe: Natsume singing DB.
+# Type-split layout: wav/, mono_label/ (lab in DECIMAL SECONDS), xml/ (.xml MusicXML).
+# Output phrase names are prefixed "natsume".
+name: natsume
+spk_id: 2
+f0_min: 100.0
+f0_max: 700.0
+lab_unit: "sec"
+save_wav: false
+
+layout: type_split
+db_root: download/natsume
+wav_dir: wav
+wav: "wav/{song}.wav"
+lab: "mono_label/{song}.lab"
+name_prefix: "natsume"
+
+phon_norm: {}
+exclude: []

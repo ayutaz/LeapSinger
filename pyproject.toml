@@ -1,0 +1,44 @@
+[project]
+name = "leapsinger"
+version = "0.1.0"
+description = "Fast singing acoustic model: a sine-harmonic + white-noise excitation mel is refined into a realistic mel by a rectified flow (few reverse steps)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "torch>=2.0",
+    "numpy",
+    "scipy",
+    "librosa",
+    "soundfile",
+    "pyyaml",
+    "pyloudnorm",
+    "tqdm",
+    "gdown",          # download the example databases (preprocess/download_scripts/)
+    "onnxruntime",    # run the bundled NHVSing vocoder ONNX (mel -> waveform)
+    "matplotlib",     # training loss/mel figures + the example notebooks
+]
+
+[project.optional-dependencies]
+# ONNX export (export/, `python -m export.cli`). Kept out of the base install so
+# training/re-synthesis stays lightweight (onnxruntime is already a base dep).
+export = [
+    "onnx>=1.14",
+    "onnxconverter-common",     # fp32 -> fp16
+    "onnxsim",                  # graph simplification (optional; skipped gracefully if it fails)
+]
+
+# Training only: the TensorBoard writer used by train.py.
+train = [
+    "tensorboard",
+]
+
+# Notes:
+# - F0 extraction uses RMVPE (a neural pitch estimator). See README for the weight download.
+# - The vocoder (mel -> waveform) is bundled as an ONNX (checkpoints/nhv_v3.onnx) and run via
+#   onnxruntime — self-contained, no external dependency.
+# - The duration model and F0 model are published in separate repositories; LeapSinger
+#   consumes raw duration + F0 as input.
+
+[tool.setuptools.packages.find]
+include = ["leapsinger*"]

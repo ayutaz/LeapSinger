@@ -1,0 +1,16 @@
+# Recipe: ONIKU_KURUMI singing DB.
+# Per-song folders each holding {song}.{lab,musicxml,wav}. lab is HTS 100ns.
+name: oniku
+spk_id: 0
+f0_min: 150.0
+f0_max: 800.0
+lab_unit: "100ns"
+save_wav: false
+
+layout: per_song
+db_root: download/oniku
+wav: "{song}/{song}.wav"
+lab: "{song}/{song}.lab"
+
+phon_norm: {}
+exclude: []
