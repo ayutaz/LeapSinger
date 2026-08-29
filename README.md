@@ -76,7 +76,7 @@ CPUで計測したRTF（Real-Time Factor。小さいほど速く、1未満なら
 
 ### 環境構築
 
-Python 3.13（`.python-version` で固定。3.10〜3.13 で動きます）。依存の管理と実行は [uv](https://docs.astral.sh/uv/) に統一しています。
+Python 3.13 固定です（`pyproject.toml` の `requires-python` と `.python-version` の両方で 3.13 に固定）。依存の管理と実行は [uv](https://docs.astral.sh/uv/) に統一しています。
 
     git clone https://github.com/wavtechyukky/LeapSinger
     cd LeapSinger

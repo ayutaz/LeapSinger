@@ -23,7 +23,7 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
     uv add <package>                           # 依存を足すときは常に uv add（pyproject にも記録される）
     uv add --optional train <package>          # extra に足すとき（train / export）
 
-- Python は `.python-version` で **3.13** に固定しています。`pyproject.toml` の `requires-python` は `>=3.10,<3.14`（上限は librosa/numba 側の 3.14 未対応に合わせたもの）。
+- Python は **3.13 固定**です（`.python-version` と `pyproject.toml` の `requires-python = ">=3.13,<3.14"` の両方）。3.13 に狭めたことで解決が 1 本になり、lock は 3.13 用の最新（librosa 1.0.0 / numpy 2.5.2 / scipy 1.18.1 など）に揃います。別バージョンで動かす提案をするときは、まずこの固定を変える必要がある点を確認すること。
 - `uv.lock` はコミット対象です。依存を変えたら lock の差分も一緒にコミットすること。
 - **PyTorch は CUDA 版を pyproject が指定しています。** PyPI の Windows 版 torch は CPU ビルドなので、`[[tool.uv.index]] pytorch-cu130` + `[tool.uv.sources] torch` で PyTorch 公式 wheel index を明示しています。Windows / Linux は `uv sync` だけで GPU 版が入り、macOS は marker で PyPI（CPU/MPS）に落ちます。CUDA channel を変えるときは index の url（`cu126` / `cu128` / `cu130` / `cu132`）を書き換えて `uv lock` をやり直します。`uv add torch --index ...` を単発で打って pyproject の index 定義と食い違わせないこと。
 

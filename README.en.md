@@ -76,7 +76,7 @@ The pseudo-mel lets you tune the harmonic decay, the number of harmonics, and th
 
 ### Setup
 
-Python 3.13 (pinned in `.python-version`; 3.10-3.13 all work). Dependencies and execution go through [uv](https://docs.astral.sh/uv/).
+Python 3.13 only (pinned both by `requires-python` in `pyproject.toml` and by `.python-version`). Dependencies and execution go through [uv](https://docs.astral.sh/uv/).
 
     git clone https://github.com/wavtechyukky/LeapSinger
     cd LeapSinger
