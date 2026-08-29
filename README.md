@@ -97,7 +97,7 @@ Python 3.10 以上。リポジトリを clone して editable install します�
 - `model` — `spk_dim`（0より大きいと多話者）、`n_speakers`、`n_styles`（0より大きいとスタイル機能を使う）、`use_uv`（v/uvを条件に使うか）
 - `excitation` — `n_harm`（倍音の本数）、`harm_decay`（倍音の減衰）、`noise_ratio`（ホワイトノイズの強さ）
 - `train` — `lr`、`max_updates`、`num_steps`（推論のステップ数。**1** を推奨）、`balance_speakers`（話者を均等にサンプリング）など
-- `gan` — 質感を鮮明化する GAN の設定。`enabled`（`false` で flow＋復元のみの学習）、`gan_start_step`（GAN を入れ始める step）、`gan_strength`（敵対的損失の強さ）など
+- `gan` — 質感を鮮明化する GAN の設定。`enabled`（`false` で flow損失＋mel損失のみの学習）、`gan_start_step`（GAN を入れ始める step）、`gan_strength`（敵対的損失の強さ）など
 - `data` — `spk_map` / `style_map`（データセットのフォルダ名 → 話者ID / スタイルID の対応）
 
 ### 辞書の作成
@@ -120,7 +120,7 @@ F0の抽出にはRMVPEを使います（RMVPEはマルチプロセスで動か�
 
 ### training
 
-学習は2段構成です。前半は flow＋復元損失で土台の声を学習し、後半で GAN を入れて質感を鮮明化します（切り替えは config の `gan` セクションで設定。`gan.enabled: false` なら flow＋復元のみ）。
+学習は2段構成です。前半は flow損失＋mel損失で土台の声を学習し、後半で GAN を入れて質感を鮮明化します（切り替えは config の `gan` セクションで設定。`gan.enabled: false` なら flow損失＋mel損失のみ）。
 
     python -m train --config configs/<name>.yaml \
       --data_dirs data/<db> [data/<db2> ...] \
@@ -137,7 +137,7 @@ F0の抽出にはRMVPEを使います（RMVPEはマルチプロセスで動か�
 
 話者の指定（bake / embed / なし）など詳しい説明は、下の「ONNX/OpenUTAUへの書き出し」を参照してください。
 
-ノートブックで、書き出しから利用まで一通り試すことができます。必要なファイルも同梱しているため、まずは動かしてみたい時にお使いください。
+ノートブックで、書き出しから利用まで一通り試すことができます。必要なモデルは Release からダウンロードして `notebooks/sample_data/` に置いてください（詳しくは同フォルダの `place_model_here.txt`）。
 
     notebooks/export_and_use_onnx.ipynb
 
@@ -167,6 +167,12 @@ OpenUTAU向けには、ボイスバンク一式（ONNX ＋ 設定 ＋ 辞書 ＋
 - **v/uv の扱い** — 有声・無声（v/uv）を条件に使うモードと、隙間を線形補間で埋めた連続F0だけを使うモードを選べます。
 - **励起の調整** — 倍音の減衰・本数・ホワイトノイズの強さを変えられます。
 - **学習レシピ** — 学習の条件は yaml で指定します（使用するデータセット、話者ID、話者ごとのスタイルやデータなど）。
+
+## 今後の課題
+
+- **多言語対応** — 現状は日本語データで検証していますが、設計自体は言語に依存しません。他言語の音素辞書・データへの対応を行い、1つのモデルで複数の言語を扱えることを目標とします。
+- **さらなる品質向上** — 擬似melの生成方法やパラメータの調整などで話者再現性に改善の余地があると考えています。
+- **OpenUTAU 実機での確認** — OpenUTAU 向けのエクスポートは用意していますが、実機での動作は未検証です。実際に動かして確認します。
 
 ## ライセンス
 

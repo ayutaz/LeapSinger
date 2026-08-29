@@ -97,7 +97,7 @@ Training and export are driven by YAML (there are examples in `configs/`). A YAM
 - `model` — `spk_dim` (greater than 0 means multi-speaker), `n_speakers`, `n_styles` (greater than 0 enables styles), `use_uv` (whether to feed v/uv as a condition).
 - `excitation` — `n_harm` (number of harmonics), `harm_decay` (harmonic decay), `noise_ratio` (white-noise strength).
 - `train` — `lr`, `max_updates`, `num_steps` (inference steps; **1** recommended), `balance_speakers` (sample speakers equally), and so on.
-- `gan` — settings for the GAN that sharpens texture. `enabled` (`false` = flow + reconstruction only), `gan_start_step` (the step at which the GAN turns on), `gan_strength` (strength of the adversarial loss), and so on.
+- `gan` — settings for the GAN that sharpens texture. `enabled` (`false` = flow loss + mel loss only), `gan_start_step` (the step at which the GAN turns on), `gan_strength` (strength of the adversarial loss), and so on.
 - `data` — `spk_map` / `style_map` (mapping from dataset folder name → speaker ID / style ID).
 
 ### Building a dictionary
@@ -120,7 +120,7 @@ F0 is extracted with RMVPE. (Please do not run RMVPE across multiple processes.)
 
 ### Training
 
-Training has two stages. The first stage learns the base voice with flow + reconstruction loss; the second stage turns on a GAN to sharpen texture. (This is set in the config's `gan` section; `gan.enabled: false` gives flow + reconstruction only.)
+Training has two stages. The first stage learns the base voice with a flow loss plus a mel loss; the second stage turns on a GAN to sharpen texture. (This is set in the config's `gan` section; `gan.enabled: false` gives the flow loss plus mel loss only.)
 
     python -m train --config configs/<name>.yaml \
       --data_dirs data/<db> [data/<db2> ...] \
@@ -137,7 +137,7 @@ Running the same command again automatically resumes from where it stopped.
 
 For speaker handling (bake / embed / none) and other details, see "Export to ONNX / OpenUTAU" below.
 
-You can try the whole flow — from export to use — in a notebook. It bundles the files you need, so use it when you just want to run something first.
+You can try the whole flow — from export to use — in a notebook. Download the model from the Release and place it in `notebooks/sample_data/` (see `place_model_here.txt` in that folder).
 
     notebooks/export_and_use_onnx.ipynb
 
@@ -168,6 +168,12 @@ Two NHVSing vocoders are bundled under `checkpoints/`.
 - **Excitation tuning** — change the harmonic decay, the number of harmonics, and the white-noise strength.
 - **Training recipes** — training conditions are set in YAML (which datasets to use, speaker IDs, per-speaker styles and data, and so on).
 
+## Future work
+
+- **Multilingual support** — so far we validate with Japanese data, but the design itself is language-independent. We plan to support other languages with their own phoneme dictionaries and data, aiming for a single model that can handle multiple languages.
+- **Higher quality** — we think there is still room to improve speaker fidelity, for example by refining how the pseudo-mel is generated and tuning its parameters.
+- **Verifying OpenUTAU on real hardware** — the OpenUTAU export is provided, but we have not verified it on an actual OpenUTAU install. We plan to test it for real.
+
 ## License
 
 The code is MIT (`LICENSE`). However, the bundled vocoder ONNX files (`checkpoints/nhv_v3*.onnx`), the trained models distributed via Releases, and the singing databases used to train them are **not** covered by MIT — they follow their own licenses and terms of use (see the Acknowledgments below and `CREDITS.txt` in the model release).
@@ -182,4 +188,4 @@ Thanks to the datasets used to train this model, and to the related projects.
 - Neural Homomorphic Vocoder — https://www.isca-archive.org/interspeech_2020/liu20_interspeech.html
 - dsp (zjlww) — https://github.com/zjlww/dsp
 
-The distributed multi-speaker models display the credits above, following each database's terms. In particular, for Natsume Yuuri we display **database production: アマノケイ / voice provider: 霧野蒼太**, and we bundle the "Terms of use for Natsume Yuuri's output audio" with the model distribution.
+The distributed multi-speaker models display the credits above, following each database's terms. For Natsume Yuuri, we display **database production: アマノケイ / voice provider: 霧野蒼太**, and we bundle the "Terms of use for Natsume Yuuri's output audio" with the model distribution.
