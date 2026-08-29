@@ -113,6 +113,8 @@ data/<db>/svc_shard.npz     # <name>|content [T,C] / |f0_interp [T] / |uv [T] / 
 
 - `train.py` は **gradient accumulation を実装していません**。config に `accum_steps: 2` があっても無視されます（互換のために残されている値）。実効 batch を増やす提案をする際はこの前提を確認すること。
 - SVC では online `pitch_aug` を使えません（特徴量が事前計算済みのため）。`train.py` が明示的に SystemExit します。augmentation は特徴量抽出前に行います。
-- RMVPE はマルチプロセスで動かさないこと（README の注意）。
+- **Windows では `torch.compile` が使えません。** `harmonic_excitation.py` の倍音和は compile 前提の融合版（Linux + Triton で 3〜4 倍）ですが、Windows には Triton wheel がなく、さらに日本語ロケール（cp932）では inductor の template 読み込み自体が `UnicodeDecodeError` になります。`triton-windows` を入れても C コンパイラが必要です。コードは **compile 生成時と初回呼び出しの両方**でループ版へフォールバックします（数値差は加算順のみ）。最初から切るなら `LEAPSINGER_EXC_COMPILE=0`。
+- 1 曲しかない DB は eval split が空になります（`n_hold = min(eval_songs, 曲数 - 1)`）。`train.py` の `log_eval` は空なら評価を飛ばします。数フレーズの overfit 検証ではこの経路を通ります。
+- RMVPE はマルチプロセスで動かさないこと（README の注意）。RMVPE の重み `preprocess/algorithms/rmvpe.pt` は初回実行時に HuggingFace から自動ダウンロードされます（約 181 MB、`.gitignore` 対象）。
 - `dataset.py` の phrase 名は `{song}_{NNNN}` 形式で、`_song_of()` が曲単位の train/eval 分割に使います。この命名を崩すと leakage 防止が効かなくなります。
 - ライセンス境界: コードは MIT ですが、同梱ボコーダー ONNX、Release 配布の学習済みモデル、学習に使った歌声 DB は MIT 対象外です。Seed-VC（GPL-3.0）は外部 baseline として実行するだけで、コードをこのリポジトリへ取り込まないこと。

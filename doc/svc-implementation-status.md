@@ -100,6 +100,28 @@ uv run python -m train --config configs/svc_base.yaml `
 
 `torch.cuda.is_available()` が True で、2048×2048 の matmul が GPU 上で実行できること（5.22 ms/iter）まで確認しています。**これは環境の疎通確認であり、SVC 学習の throughput・peak VRAM の実測ではありません。**
 
+### バージョン更新後の疎通（確認済み・合成音声）
+
+Python 3.13 / torch 2.13 / librosa 1.0 へ更新した後、次を上記環境で実行して通しました。**入力は合成波形であり実歌唱ではないため、完了レベル 3（実データ）には該当しません。**
+
+| 経路 | 結果 |
+|---|---|
+| SVC 学習 | `configs/svc_base.yaml` 由来の設定で 40 step。flow 0.0179 -> 0.0127、recon 0.0463 -> 0.0269 |
+| 自動再開 | 同一 `run_name` の再実行で `ckpt_000020.pt -> step 20` を読み直して継続 |
+| checkpoint | `torch.load(weights_only=True)` で読める（torch 2.6+ の既定で問題なし） |
+| SVC 推論 | `infer_svc_mel` が CPU / CUDA 両方で mel [128, 206] を生成 |
+| ボコーダー | NHVSing `nhv_v3.onnx` / `nhv_v3x.onnx` を onnxruntime 1.29 で読み、WAV を出力 |
+| SVS 学習 | 3.85M params、GAN 有効（`d_loss` / `adv` / `fm` が記録される）で 20 step |
+| SVS 前処理 | `preprocess.run` が合成 WAV + lab から `shard.npz` を生成（RMVPE の F0 追従を含む） |
+| SVS 推論 | 前処理出力で学習した checkpoint から mel -> WAV |
+| ONNX 書き出し | fp32 13.9 MB / fp16 8.9 MB、onnxsim 適用、ORT parity 検証が dynamic shape 2 通りで成功 |
+| ログ | TensorBoard の scalar / mel 図（matplotlib）/ 音声が書き出される |
+
+この過程で 2 件の不具合を修正しました。
+
+1. **`torch.compile` が Windows で使えない。** 倍音和は compile 融合版を前提にしていますが、Windows には Triton wheel がなく、日本語ロケール（cp932）では inductor の template 読み込みが `UnicodeDecodeError` になります。compile の**生成時**に例外が出るため、既存の「compile 非対応ならループ」という意図が働かず学習が起動しませんでした。生成時と初回呼び出しの両方でフォールバックするようにしています。`triton-windows` を入れると生成は通りますが、今度は C コンパイラが無く初回呼び出しで失敗します（この経路もフォールバックで吸収することを確認）。
+2. **1 曲だけの DB で eval split が空になり `log_eval` が落ちる。** `n_hold = min(eval_songs, 曲数 - 1)` なので単一曲では hold-out が作れません。空なら評価を飛ばすようにしました。[実行計画](svc-plan.md) の M2「1〜数 phrase の overfit」はこの経路を通ります。
+
 ### 確認済み
 
 - SVC targeted unit tests 10 件が成功（上記環境の実 GPU マシン上）。

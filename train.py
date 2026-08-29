@@ -376,6 +376,8 @@ def main():
     mvmax = float(cfg["model"].get("mel_vmax", 2.0))
 
     def log_eval(step):
+        if not eval_samples:                          # 1曲だけの DB は hold-out が作れない
+            return                                    # （n_hold=min(eval_songs, 曲数-1)）→ eval を飛ばす
         model.eval()
         with torch.no_grad():
             torch.manual_seed(1234)

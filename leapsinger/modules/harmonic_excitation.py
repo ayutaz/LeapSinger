@@ -69,8 +69,22 @@ def _harm_sum(phase: torch.Tensor, f0_up: torch.Tensor, kk: torch.Tensor,
     return (torch.sin(kk * ph) * kk.pow(-decay) * aa).sum(dim=1)      # [B,n]
 
 
-_harm_sum_c = (torch.compile(_harm_sum, dynamic=True)
-               if _EXC_COMPILE and hasattr(torch, "compile") else None)
+def _try_compile(fn):
+    """compile できなければ None（＝ループ版を使う）。`hasattr(torch, "compile")` は torch 2.x で
+    常に真なので、可否は実際に作ってみるまで分からない。Windows は Triton wheel が配布されず
+    inductor が使えない。さらに日本語ロケール(cp932)では inductor の template 読み込み自体が
+    UnicodeDecodeError になる（torch 2.13 で確認）。どちらもここで吸収する。"""
+    if not (_EXC_COMPILE and hasattr(torch, "compile")):
+        return None
+    try:
+        return torch.compile(fn, dynamic=True)
+    except Exception as e:                                             # noqa: BLE001
+        print(f"[excitation] torch.compile unavailable -> harmonic loop fallback "
+              f"({type(e).__name__}: {e})", flush=True)
+        return None
+
+
+_harm_sum_c = _try_compile(_harm_sum)
 
 
 def _harm_sum_loop(phase: torch.Tensor, f0_up: torch.Tensor,
@@ -84,11 +98,22 @@ def _harm_sum_loop(phase: torch.Tensor, f0_up: torch.Tensor,
 
 def _harmonics(phase: torch.Tensor, f0_up: torch.Tensor, n_harm: int,
                nyq: float, decay: float) -> torch.Tensor:
-    """compile 融合版があればそれを、無ければ（compile 非対応/opt-out）メモリ安全なループ。"""
+    """compile 融合版があればそれを、無ければ（compile 非対応/opt-out）メモリ安全なループ。
+
+    compile 可否は呼ぶまで分からない（`hasattr(torch, "compile")` は torch 2.x で常に真）。
+    Windows は Triton wheel が無く inductor が使えず、日本語ロケール(cp932)では inductor の
+    template 読み込み自体が UnicodeDecodeError になる。初回呼び出しで失敗したらループへ
+    恒久フォールバックする（数値は加算順の差のみ・Δ~1e-6）。"""
+    global _harm_sum_c
     if _harm_sum_c is not None:
         kk = torch.arange(1, n_harm + 1, device=phase.device,
                           dtype=phase.dtype).view(1, -1, 1)
-        return _harm_sum_c(phase, f0_up, kk, nyq, decay)
+        try:
+            return _harm_sum_c(phase, f0_up, kk, nyq, decay)
+        except Exception as e:                                         # noqa: BLE001
+            print(f"[excitation] torch.compile unavailable -> harmonic loop fallback "
+                  f"({type(e).__name__}: {e})", flush=True)
+            _harm_sum_c = None
     return _harm_sum_loop(phase, f0_up, n_harm, nyq, decay)
 
 
