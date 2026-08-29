@@ -9,6 +9,13 @@ dist/
 .pytest_cache/
 .ipynb_checkpoints/
 
+# ── Secrets / local env（API トークン等。絶対にコミットしない）──────────
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
 # ── Virtual environments ────────────────────────────────────────────────
 .venv/
 venv/
