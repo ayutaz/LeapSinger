@@ -73,12 +73,8 @@ loader は feature width、mel bins、全配列の `T` を検証し、暗黙 tra
 
 ## 4. 学習例
 
-```powershell
-uv run python -m train --config configs/svc_base.yaml `
-  --data_dirs data/target `
-  --run_name svc_target `
-  --out_root log `
-  --device cuda
+```bash
+uv run python -m train --config configs/svc_base.yaml \n  --data_dirs data/target \n  --run_name svc_target \n  --out_root log \n  --device cuda
 ```
 
 実行前に repository 内にない `svc_shard.npz` を外部で準備する必要があります。base と fine-tune は別 `run_name` を使います。

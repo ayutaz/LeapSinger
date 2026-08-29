@@ -102,7 +102,9 @@ data/<dataset>/
 
 この表は現行 SVC 実装の peak VRAM 実測ではありません。AMP、gradient checkpointing、feature width、GAN、sequence length、PyTorch/CUDA version で変動します。
 
-**確認済み:** 現在の開発機は RTX 4070 Ti SUPER 16 GB（driver 596.21 / torch 2.13.0+cu130、詳細は [実装状況](svc-implementation-status.md) の「実行環境」表）です。上表の基準では target fine-tune は手元で回せる一方、multi-singer base pretraining の推奨基準 24 GB には届きません。**要ユーザー判断:** base を手元で回すために batch / crop を落とすか、外部 GPU を用意するかを M3 開始前に決めます。
+**確認済み:** 現在の開発機は RTX 4070 Ti SUPER 16 GB（driver 596.21 / torch 2.13.0+cu130、詳細は [実装状況](svc-implementation-status.md) の「実行環境」表）です。上表の基準では target fine-tune は手元で回せる一方、multi-singer base pretraining の推奨基準 24 GB には届きません。**決定:** 学習は vast.ai の Linux GPU インスタンスで行い、手元の Windows 機は開発・推論・検証に使います。したがって上表の 24 GB / 48 GB 級はインスタンスの選択で満たせます。**見積もり:** インスタンスは時間課金なので、必要 VRAM だけでなく「1 実験あたり何時間か」で選ぶことになります。最初の 100 / 1,000 update の実測（examples/sec、frames/sec、peak VRAM）が、そのまま料金の見積もりになります。
+
+**確認済み:** `uv.lock` は Linux 側も解決済みで、`torch 2.13.0+cu130` と `triton 3.7.1`、`nvidia-cudnn-cu13` / `nvidia-nccl-cu13` / `cuda-toolkit 13.0.3.0` が入ります。つまり Windows では使えなかった `torch.compile`（倍音和の融合、3〜4 倍）が Linux では有効になります。セットアップは [`tools/vast_bootstrap.sh`](../tools/vast_bootstrap.sh) が行い、compile 経路が実際に効いているかまで確認します。**見積もり:** torch と nvidia 系 wheel だけで 8 GB 前後を消費するため、インスタンスのディスクは 40 GB 以上を見ます（手元 Windows の `.venv` 実測は 3.4 GB、うち torch が 2.8 GB）。
 
 ## 7. batch 設計
 

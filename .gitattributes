@@ -1,0 +1,2 @@
+# Linux のインスタンスで実行するスクリプトは必ず LF。CRLF が混ざると shebang が壊れる。
+*.sh text eol=lf

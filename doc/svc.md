@@ -51,6 +51,7 @@
 | pitch | RMVPE 等で source F0 と V/UV を抽出する方針 |
 | vocoder | NHVSing と互換な 44.1 kHz・hop 256・128-bin ln-mel を出力する |
 | 学習順序 | multi-singer base の事前学習を推奨し、target singer へ fine-tune |
+| 学習環境 | 学習は vast.ai の Linux GPU インスタンスで行う。手元の Windows 機は開発・推論・検証用 |
 | 完了判定 | コードの存在ではなく、実音声・比較試聴・遅延実測まで段階別に判定する |
 
 ## 未決事項

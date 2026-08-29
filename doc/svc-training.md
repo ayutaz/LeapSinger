@@ -107,16 +107,16 @@ vocoder fine-tune は target similarity を上げる可能性がありますが�
 
 streaming student は offline teacher と同じ test set で比較し、品質低下と遅延低下を同時に報告します。
 
-## 9. 初期コマンド
+## 9. 実行環境と初期コマンド
+
+**決定:** 学習は vast.ai の Linux GPU インスタンスで行います。手元の Windows 機は開発・推論・検証用です。新規インスタンスの用意は [`tools/vast_bootstrap.sh`](../tools/vast_bootstrap.sh) が行います（uv 導入、`uv.lock` どおりの同期、CUDA 疎通、倍音和の `torch.compile` 経路が効いているかの確認、単体テストまで）。
+
+**注意:** インスタンスのディスクは揮発します。`log/<run>/ckpt_*.pt` と TensorBoard の events は実験記録の一部なので、実験中に外部ストレージへ退避します。
 
 現在の実装が受け取る target-singer 学習例です。`svc_shard.npz` はまだ repository 内 command では生成できません。
 
-```powershell
-uv run python -m train --config configs/svc_base.yaml `
-  --data_dirs data/target `
-  --run_name svc_target `
-  --out_root log `
-  --device cuda
+```bash
+uv run python -m train --config configs/svc_base.yaml \n  --data_dirs data/target \n  --run_name svc_target \n  --out_root log \n  --device cuda
 ```
 
 multi-singer の場合は `model.n_speakers`、`data.spk_map`、`train.balance_speakers` を corpus に合わせます。
