@@ -23,6 +23,7 @@ class AuditThresholds:
     max_silence_ratio: float = 0.5     # 半分以上が無音なら素材として使えない
     max_dc_offset: float = 0.02        # 直流オフセット
     min_sec: float = 0.3               # configs の data.min_sec と揃えた
+    min_bandwidth_hz: float | None = None   # None で無効。実音声には mel.fmax と同じ 16000 を推奨
 
 
 def audit_clip(wav: np.ndarray, sr: int, *, expected_sr: int,
@@ -59,7 +60,44 @@ def audit_clip(wav: np.ndarray, sr: int, *, expected_sr: int,
         dc = abs(float(w.mean()))
         if dc > th.max_dc_offset:
             reasons.append(f"dc_offset={dc:.5f} max={th.max_dc_offset}")
+
+        if th.min_bandwidth_hz is not None:
+            # 既定は無効。純音のような合成信号は高域が無くて当然で、常時有効だと誤検出になる。
+            bandwidth = effective_bandwidth_hz(w, sr)
+            if bandwidth < th.min_bandwidth_hz:
+                reasons.append(f"band_limited={bandwidth:.0f}Hz "
+                               f"min={th.min_bandwidth_hz:.0f}Hz")
     else:
         reasons.append("empty=no finite samples")
 
     return reasons
+
+
+def effective_bandwidth_hz(wav: np.ndarray, sr: int, *, floor_db: float = -60.0) -> float:
+    """実際にエネルギーが入っている上限周波数を返す。
+
+    低い sample rate から上げただけの素材を見抜くために使います。`mel.fmax` は 16,000 Hz なので、
+    24 kHz 音源（Nyquist 12 kHz）を 44.1 kHz へ上げても 12〜16 kHz は空のままです。それを混ぜて
+    学習すると、その帯域を「無い」と学習してこもった出力になります。
+
+    スペクトルをピークからの相対 dB で見て、`floor_db` を上回る最も高い帯域の周波数を返します。
+    ビンをまとめて平均するのは、白色雑音のようにビン単位では暴れる信号でも安定させるためです。
+    """
+    w = np.asarray(wav, dtype=np.float64)
+    w = w[np.isfinite(w)]
+    if w.size < 2:
+        return 0.0
+    spec = np.abs(np.fft.rfft(w * np.hanning(w.size)))
+    freqs = np.fft.rfftfreq(w.size, 1.0 / float(sr))
+
+    group = max(1, spec.size // 512)                  # 512 帯域くらいに束ねる
+    usable = (spec.size // group) * group
+    band = spec[:usable].reshape(-1, group).mean(axis=1)
+    band_hz = freqs[:usable].reshape(-1, group).mean(axis=1)
+
+    peak = float(band.max())
+    if peak <= 0.0:
+        return 0.0
+    db = 20.0 * np.log10(np.maximum(band, 1e-20) / peak)
+    above = np.flatnonzero(db > floor_db)
+    return float(band_hz[above[-1]]) if above.size else 0.0

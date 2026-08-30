@@ -10,7 +10,7 @@ import unittest
 
 import numpy as np
 
-from preprocess.svc.audit import AuditThresholds, audit_clip
+from preprocess.svc.audit import AuditThresholds, audit_clip, effective_bandwidth_hz
 from preprocess.svc.coverage import pitch_band_seconds, voiced_range
 from preprocess.svc.split import split_by_group
 
@@ -89,6 +89,54 @@ class AuditClipTests(unittest.TestCase):
     def test_rejects_a_non_mono_clip(self):
         with self.assertRaises(ValueError):
             audit_clip(np.zeros((2, 1000), dtype=np.float32), self.SR, expected_sr=self.SR)
+
+
+class BandwidthTests(unittest.TestCase):
+    """低い sample rate から上げただけの素材を見抜く。
+
+    `mel.fmax` は 16,000 Hz。24 kHz 音源（Nyquist 12 kHz）を 44.1 kHz へ上げても
+    12〜16 kHz は空のままで、混ぜて学習するとその帯域を「無い」と学習してこもった出力になる。
+    JVS-MuSiC が配布版 24 kHz なのはまさにこの例で、GTSinger 自身も
+    check_valid_bandwidth.py を同梱している。実在する問題なので検査する。
+    """
+
+    SR = 44100
+
+    def _noise(self, n=44100, seed=0):
+        return np.random.default_rng(seed).standard_normal(n).astype(np.float32) * 0.1
+
+    def _band_limited(self, cutoff_hz, n=44100):
+        # cutoff より上を落とした白色雑音（= その sr から上げた素材の模擬）
+        rng = np.random.default_rng(1)
+        spec = np.fft.rfft(rng.standard_normal(n))
+        freqs = np.fft.rfftfreq(n, 1 / self.SR)
+        spec[freqs > cutoff_hz] = 0.0
+        y = np.fft.irfft(spec, n)
+        return (y / (np.abs(y).max() + 1e-9) * 0.5).astype(np.float32)
+
+    def test_full_band_noise_reaches_near_nyquist(self):
+        bw = effective_bandwidth_hz(self._noise(), self.SR)
+        self.assertGreater(bw, 0.9 * self.SR / 2)
+
+    def test_detects_the_cutoff_of_band_limited_audio(self):
+        bw = effective_bandwidth_hz(self._band_limited(12000.0), self.SR)
+        self.assertAlmostEqual(bw, 12000.0, delta=800.0)
+
+    def test_audit_flags_band_limited_audio_when_a_minimum_is_set(self):
+        th = AuditThresholds(min_bandwidth_hz=16000.0)
+        reasons = audit_clip(self._band_limited(12000.0), self.SR,
+                             expected_sr=self.SR, thresholds=th)
+        self.assertTrue(any(r.startswith("band_limited") for r in reasons), reasons)
+
+    def test_audit_accepts_full_band_audio_when_a_minimum_is_set(self):
+        th = AuditThresholds(min_bandwidth_hz=16000.0)
+        reasons = audit_clip(self._noise(), self.SR, expected_sr=self.SR, thresholds=th)
+        self.assertEqual([r for r in reasons if r.startswith("band_limited")], [])
+
+    def test_bandwidth_check_is_off_by_default(self):
+        # 純音のような合成信号は高域が無くて当然。既定で有効にすると誤検出だらけになる。
+        reasons = audit_clip(self._band_limited(3000.0), self.SR, expected_sr=self.SR)
+        self.assertEqual([r for r in reasons if r.startswith("band_limited")], [])
 
 
 class SplitByGroupTests(unittest.TestCase):
