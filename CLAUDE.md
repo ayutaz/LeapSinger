@@ -35,8 +35,15 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
 
     uv run python -m preprocess.svc.run --wav-dir download/ritsu --out data/ritsu_svc
     uv run python -m preprocess.svc.run --from-cache data/ritsu_svc/_cache --out data/ritsu_svc --subset-seed 1
+    # 入れ子の深いコーパス（GTSinger の 1 歌手 = <技法>/<曲>/<Group>/NNNN.wav）
+    uv run python -m preprocess.svc.run --wav-dir download/gtsinger/Japanese/JA-Soprano-1 \
+      --out data/JA_Soprano_1 --song-parts 1 --max-hours 0.75
 
 **2 段構成です。** 1 段目（重い・GPU）が ContentVec と RMVPE を回して `_cache/` へ、2 段目（軽い・CPU）が整列・正規化・次元削減を行って shard を書きます。`--from-cache` で 2 段目だけを回せるので、**補間方法や 256 次元 seed の ablation に ContentVec と RMVPE の再実行が要りません。**
+
+**`--song-parts` を忘れないこと。** 既定は親ディレクトリ名を曲名にします。`<曲>/<曲>.wav` という配置ならそれで正しいのですが、GTSinger のように深いと**全部の曲が `Control_Group` に潰れます**。曲名は `_song_of()` の曲単位 split に使われるので、潰れると leakage します。`--max-hours` は歌手ごとの分量を曲をまたいで均等に選んで揃えるためのものです（base 事前学習では総時間より話者の多様性が効くため）。
+
+**話者ごとにディレクトリを分けること。** `svc_dataset.py` は speaker id を**ディレクトリ名**から `spk_map` で引くので、1 つの shard に複数話者を混ぜると区別できません。M3 の素材一式は `tools/m3_corpus.py` が用意します。
 
 学習（SVS も SVC も同じエントリポイント。`model.arch` で分岐）:
 
@@ -47,6 +54,12 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
     uv run python -m train --config configs/svc_base.yaml \
       --data_dirs data/target --run_name svc_target --out_root log --device cuda
 
+    # multi-singer base（M3）。spk_map と n_speakers は素材から生成した config に入る
+    uv run python tools/m3_corpus.py --download --out data --write-config log/m3_base/config.yaml
+    uv run python -m train --config log/m3_base/config.yaml --data_dirs data/<話者>... \
+      --run_name m3_base --out_root log --device cuda
+
+- `train.py` は step 100 / 1,000 / 10,000 で `[perf]` 行を出し、`log/<run>/perf.json` と TensorBoard の `perf/*` に step/s・examples/s・frames/s・peak VRAM を残します。vast.ai は時間課金なので、この値がそのまま料金の見積もりになります。
 - 同じコマンドを再実行すると `log/<run_name>/ckpt_*.pt` の最新から**自動再開**します。別実験は必ず `--run_name` を変え、base checkpoint を上書きしないこと。
 - `--init_from <ckpt> --finetune` は G 重みのみ読み込み、step / optimizer をリセット、D は新規です。**同一構造の checkpoint を前提**としており、SVS → SVC の部分ロードには対応していません（未実装）。
 
@@ -138,10 +151,10 @@ manifest には encoder の model revision と層、sample rate、hop、**SSL �
 | skill | `leapsinger-verify` | 依存・環境を変えた後の疎通確認の回し方と結果の読み方 |
 | skill | `leapsinger-experiment` | 学習実験を事故なく回す手順（run 名、無視される設定、記録、主張の範囲） |
 | skill | `leapsinger-docs` | 確度ラベルと主張規則を保ったままドキュメントを更新する作法 |
-| skill | `vast-instance` | vast.ai インスタンスの検索・作成・回収・破棄 |
-| hook | `tools/hooks/guard_commands.py` | `PreToolUse` で「常に間違い」なコマンドを実行前に止める |
+| skill | `vast-instance` | vast.ai インスタンスの検索・作成・回収・破棄、実運用で踏んだ落とし穴 |
+| hook | `tools/hooks/guard_commands.py` | `PreToolUse` で「常に間違い」なコマンドを実行前に止める（回帰テスト 45 件） |
 
-hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の staging、`git push --force`、`git reset --hard`、`log|data|checkpoints|.git` の `rm -rf`、`vastai` の直接叩き（料金確認を飛ばすため）、`unittest discover`、そして**既存 ckpt がある run へ `--init_from` を渡す**こと（`train.py` はこれを黙って無視して自動再開します）。
+hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の staging、`git push --force`、`git reset --hard`、`log|data|checkpoints|.git` の `rm -rf`、`vastai` の直接叩き（料金確認を飛ばすため）、`unittest discover`、**手元での学習**（device によらず）、**既存 ckpt がある run へ `--init_from` を渡す**こと（`train.py` はこれを黙って無視して自動再開します）、**取得スクリプトの `-m` 実行**（`_gdrive` の兄弟 import が解決できず必ず失敗）、**`CUDA_VISIBLE_DEVICES=""`**（空文字は未設定扱いで CUDA が隠れない。`-1` が要る）。
 
 止めすぎると自動運転が壊れるので、判断の余地がないものだけを対象にしています。どうしても必要なときはコマンド末尾に `# guard:allow` を付けると通ります。ルールを足したら `tools/hooks/test_guard.py` にケースも足してください。
 
@@ -157,7 +170,7 @@ hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の 
 - 「世界初」「唯一」は使わない（rectified-flow SVC も harmonic modelling も先行研究がある）。
 - 「1-step」は acoustic flow の step 数であり、pipeline 全体の話ではない。
 
-現在の到達点は「実装レベル」と「合成 smoke レベル」までです。実データ学習、Seed-VC 比較、streaming student は未到達です（`doc/svc-implementation-status.md` の検証済み / 未検証の境界を参照）。
+現在の到達点は**完了レベル 3（実データ）**です。実音声から shard を作り、23 話者・約 18 時間の multi-singer base を学習し、未知 source で内容が崩壊しないことまで実測しました（M0〜M3 完了）。**target fine-tune、音質と話者類似度の評価、Seed-VC 比較、streaming student は未到達**です（`doc/svc-implementation-status.md` の検証済み / 未検証の境界を参照）。
 
 ## 既知の落とし穴
 
@@ -165,6 +178,8 @@ hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の 
 - **ローカルの GPU は `nvidia-smi` が正常に見えても context 生成に失敗することがあります**（`CUDA error: CUDA-capable device(s) is/are busy or unavailable`）。`torch.cuda.is_available()` は driver の有無しか見ないので **True を返しても使えるとは限りません**。判定するなら `torch.zeros(1, device="cuda")` を実際に確保すること。この状態では推論スクリプトも落ちるので `--device cpu` で回します。
 - **CPU で回すときは `CUDA_VISIBLE_DEVICES=-1` を渡すこと。** torch 2.13 の optimizer は `step()` ごとに `torch.accelerator.current_stream()` を呼ぶため、CPU tensor しか無くても壊れた CUDA に触って落ちます。**`""` では効かず `-1` が要ります。** `run_smoke.py --device cpu` は自動で渡します。`train.py` の `pin_memory` も `_loader_kwargs()` で CUDA のときだけ有効です（回帰テストは `test_svc_model.LoaderKwargsTests`）。
 - **`tools/smoke/` の合成データは `configs/svc_base.yaml` の `model.content_dim` を読んで作ります。** ここを定数に戻すと、config を変えたときに SVC の学習・再開・推論ステージが黙って落ちます（実際に起きました）。
+- **phrase 名の衝突は例外になりません。** `preprocess.svc.run` は曲ごとの通し番号で採番し、衝突を検出したら止めます。この採番を「ファイルごとに 0 から」に戻すと、同じ曲名の別ファイルが cache を**黙って上書き**し、shard の phrase 数が減るだけになります（GTSinger で 1,922 ファイルが 3 名に潰れました）。
+- **曲名を ASCII に削らないこと。** `_SAFE` は `[^\w-]` なので CJK を残します。ASCII だけにすると日本語題の曲がすべて同じ名前になり、曲単位 split が効きません（1,922 中 1,723 件が潰れました）。曲名は casefold して表記ゆれ（`Heartful_Song` と `Heartful_song`）も畳んでいます。
 - SVC では online `pitch_aug` を使えません（特徴量が事前計算済みのため）。`train.py` が明示的に SystemExit します。augmentation は特徴量抽出前に行います。
 - **学習はすべて vast.ai の Linux インスタンスで行います。手元の Windows で `train.py` を起動すると device によらず hook が止めます**（`tools/hooks/guard_commands.py` の `check_local_training`）。`--device cpu` に逃げるのも不可です。CPU は実測で 1 phrase 1200 step に約 60 分かかり、実験記録の環境も本番と食い違います。ローカル GPU は他の作業と取り合って `unspecified launch failure` を起こしました（実際に発生）。 手元の Windows 機は開発・推論・検証用で、セットアップは `tools/vast_bootstrap.sh`。API token 等は `.env`（gitignore 済み）に置きます。`uv.lock` は Linux も解決済みで、Linux では `triton` が入るため下の `torch.compile` の制約は当てはまりません。
 - **Windows では `torch.compile` が使えません。** `harmonic_excitation.py` の倍音和は compile 前提の融合版（Linux + Triton で 3〜4 倍）ですが、Windows には Triton wheel がなく、さらに日本語ロケール（cp932）では inductor の template 読み込み自体が `UnicodeDecodeError` になります。`triton-windows` を入れても C コンパイラが必要です。コードは **compile 生成時と初回呼び出しの両方**でループ版へフォールバックします（数値差は加算順のみ）。最初から切るなら `LEAPSINGER_EXC_COMPILE=0`。

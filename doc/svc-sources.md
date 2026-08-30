@@ -25,7 +25,10 @@
 | [`configs/3speaker_gan2d.yaml`](../configs/3speaker_gan2d.yaml) | 既存 SVS batch/update/GAN 設定の比較 |
 | [`test_svc_model.py`](../test_svc_model.py) | targeted verification の範囲 |
 | [`preprocess/svc/`](../preprocess/svc/) | 整列・部分集合・loudness・検査・coverage・split・report の実装 |
-| [`test_svc_preprocess.py`](../test_svc_preprocess.py) / [`test_svc_dataset.py`](../test_svc_dataset.py) | 契約テスト 90 件 |
+| [`test_svc_preprocess.py`](../test_svc_preprocess.py) / [`test_svc_dataset.py`](../test_svc_dataset.py) | 契約テスト（合計 185 件のうち 166 件） |
+| [`configs/svc_base_multi.yaml`](../configs/svc_base_multi.yaml) / [`tools/m3_corpus.py`](../tools/m3_corpus.py) | M3 の recipe と素材の用意（話者ごとに 1 shard） |
+| [`tools/m2_verify.py`](../tools/m2_verify.py) / [`tools/m3_verify.py`](../tools/m3_verify.py) / [`tools/nhv_indist.py`](../tools/nhv_indist.py) | M2 / M3 / M0 ゴール 4 の測定と、その JSON 報告 |
+| `log/m3_base/{config.yaml,perf.json,events}` と `out/m3_*/m3_report.json` | M3 の実験記録（回収済み。スループット・peak VRAM・内容保持の一次データ） |
 | [`doc/svc-content-encoder.md`](svc-content-encoder.md) / [`doc/svc-dataset-ledger.md`](svc-dataset-ledger.md) | encoder 選定と M0 台帳 |
 | [`pyproject.toml`](../pyproject.toml) / [`uv.lock`](../uv.lock) / `.python-version` | Python 3.13 固定、CUDA wheel index、依存の解決結果 |
 | [`CLAUDE.md`](../CLAUDE.md) | コマンド、共有スタック、データ契約、既知の落とし穴 |

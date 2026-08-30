@@ -44,6 +44,9 @@ description: doc/ 配下と README / CLAUDE.md を更新するときの作法。
 | 方針の確定 | [`svc.md`](../../../doc/svc.md) の主要な決定事項 / 未決事項 |
 | 参照した根拠 | [`svc-sources.md`](../../../doc/svc-sources.md) のローカル根拠 |
 | 開発上の落とし穴 | [`CLAUDE.md`](../../../CLAUDE.md) の既知の落とし穴 |
+| 作業手順で分かったこと | 該当する skill（[verify](../leapsinger-verify/SKILL.md) / [experiment](../leapsinger-experiment/SKILL.md) / [tdd](../leapsinger-tdd/SKILL.md) / [vast](../vast-instance/SKILL.md)）。**文書に書いただけでは次の作業で読まれない** |
+| 「常に間違い」なコマンドが判明 | `tools/hooks/guard_commands.py` にルール、`tools/hooks/test_guard.py` に**止めるケースと通すケースの両方**、CLAUDE.md の hook 一覧 |
+| テスト件数・ステージ数 | CLAUDE.md / status / tdd skill。**数えずに書かない** |
 
 新しい文書を足したら [`svc.md`](../../../doc/svc.md) の文書一覧に行を足す（索引が入口なので、
 載っていない文書は無いのと同じ）。
@@ -63,17 +66,30 @@ description: doc/ 配下と README / CLAUDE.md を更新するときの作法。
 uv run python - <<'PY'
 import glob, os, re
 bad = []
-for f in ["README.md", "README.en.md", "CLAUDE.md"] + sorted(glob.glob("doc/*.md")):
+files = (["README.md", "README.en.md", "CLAUDE.md"] + sorted(glob.glob("doc/*.md"))
+         + sorted(glob.glob(".claude/skills/*/SKILL.md")))      # skill 内のリンクも壊れる
+for f in files:
     s = open(f, encoding="utf-8").read()
     for m in re.finditer(r"\[([^\]]*)\]\(([^)]+)\)", s):
-        t = m.group(2).split("#")[0]
-        if t and not t.startswith(("http", "mailto:")):
-            p = os.path.normpath(os.path.join(os.path.dirname(f), t))
-            if not os.path.exists(p):
-                bad.append((f, t))
-print("broken links:", bad or "none")
+        t = m.group(2)
+        if t.startswith(("http", "mailto:")):
+            continue
+        path, _, anchor = t.partition("#")
+        tgt = os.path.normpath(os.path.join(os.path.dirname(f), path)) if path else f
+        if path and not os.path.exists(tgt):
+            bad.append((f, t, "file")); continue
+        if anchor and os.path.exists(tgt):                       # 見出しアンカーも確かめる
+            heads = re.findall(r"^#{2,6}\s+(.+)$", open(tgt, encoding="utf-8").read(), re.M)
+            slugs = {re.sub(r"[^\w぀-ヿ一-鿿-]", "",
+                            h.lower().replace(" ", "-").replace("`", "")) for h in heads}
+            if anchor not in slugs:
+                bad.append((f, t, "anchor"))
+print("broken:", bad or "none")
 PY
 ```
+
+**アンカーまで見ること。** ファイルは在るのに見出しが無いリンクを実際に作りました
+（日本語見出しの slug は記号の落ち方が直感と違います）。
 
 日本語は表記の統一を保つ（`確認済み` などのラベルは全角のまま、コード識別子は原文のまま）。
 

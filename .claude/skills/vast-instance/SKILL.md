@@ -27,6 +27,10 @@ API token は `.env`（`.gitignore` 対象）に置く。`tools/vast.py` が
 - config を決めておく（[leapsinger-experiment](../leapsinger-experiment/SKILL.md) の 1〜2）
 - データの転送手段を決めておく（shard をどうやってインスタンスへ置くか）
 - 手元で `uv run python tools/smoke/run_smoke.py --device cpu` を通しておく
+- **必要になるスクリプトを書き切っておく。** M3 では課金中に実装を書きたくなり、TDD の順序を
+  1 度崩した。素材の構造（GTSinger の階層など）は**借りる前に手元のサンプルで確かめられる**。
+- **ディスク量を見積もっておく。** ディスクは実効料金に効く（下の 3 節）。M3 の実測は
+  音声 11 GB + shard 29 GB + 環境 11 GB = **51 GB**。
 
 ## 2. 探す（課金なし）
 
@@ -54,7 +58,12 @@ uv run python tools/vast.py create <offer_id> --disk 60 --yes
   gcc 入りなので Linux では `torch.compile` が効く）。
 - `--rmvpe` を付けると前処理用の RMVPE 重み（181 MB）も落とす。
 - onstart で `tools/vast_bootstrap.sh` が走る。uv 導入 → clone → `uv sync` → CUDA 疎通 →
-  **倍音和の compile 経路が効いているかの確認** → 単体テスト、まで自動。
+  **倍音和の compile 経路が効いているかの確認** → 単体テスト（3 ファイル全件）、まで自動。
+- **`--disk` は料金に直接効く。** M3 で 150 GB を付けたら $0.136/hr の offer が実効 **$0.21/hr**
+  になった（+54%）。必要量を 1 節で見積もってから決める。
+- **VRAM は控えめでよいことが多い。** multi-singer base の実測 peak は **1.95 GB** で、
+  24 GB 級は要らなかった（`max_batch_size` が先に効くため）。VRAM より
+  **回線速度（`down`）とディスク**で選ぶほうが効く場面がある。
 
 ## 3b. 実運用で分かったこと（2026-08-30、M2 で一通り回した）
 
@@ -69,6 +78,17 @@ uv run python tools/vast.py create <offer_id> --disk 60 --yes
 | offer ID の**回転が速い** | 検索してすぐ作る。数分置くと消える |
 | インスタンスの `logs` には bootstrap の出力が出ない | onstart は `/root/bootstrap.log` へ落としてある。SSH で見る |
 | アカウントに**自分が作っていないインスタンス**が居ることがある | `label` と `image` で見分ける。**自分のもの以外は触らない** |
+| `show instances` が日本語 Windows で `'cp932' codec can't encode character` で落ちる | `tools/vast.py` が出力を UTF-8 で受けてから安全に表示するようにした |
+| `create` の応答に **`instance_api_key` が平文で出る** | `tools/vast.py` が伏せるようにした。**ログにもチャットにも残さない** |
+
+### 3c. M3 で追加で踏んだこと（2026-08-30）
+
+| 事象 | 対処 |
+|---|---|
+| **リモートで `pkill -f "..."` を打つと自分の SSH シェルごと死ぬ** | コマンド文字列自体がパターンに一致する。`pkill -9 -f "python3 -m trai[n]"` のように**角括弧で自己一致を外す** |
+| `ssh ... 'cmd &'` は SSH が channel を閉じないので戻ってこない | `setsid nohup ... < /dev/null > log 2>&1 &` で完全に切り離し、ログを別途 `tail` する |
+| 長時間ジョブの進捗を `ssh` で毎回取ると turn を食う | 完了マーカー（`echo "=== 完了 ==="`）を仕込み、`until grep -q ...; do sleep 60; done` を**バックグラウンドで 1 本**回して通知を待つ |
+| ダウンロードの進捗バーが**巨大な出力**になる | 取得するときは `grep -aE "^\[...\]"` などで必ず絞る。生の `tail` を投げない |
 
 **接続:**
 

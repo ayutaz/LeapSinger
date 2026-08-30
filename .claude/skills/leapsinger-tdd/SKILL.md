@@ -12,16 +12,16 @@ description: このリポジトリで実装を書くときの TDD の当て方�
 ```bash
 uv run python -m unittest test_svc_model test_svc_preprocess test_svc_dataset -v   # 単体 185 件
 uv run python -m unittest test_svc_model.HarmonicSVCModelTests.test_single_item_inference_contract
-uv run python tools/hooks/test_guard.py                      # hook の回帰 37 件
+uv run python tools/hooks/test_guard.py                      # hook の回帰 45 件
 LEAPSINGER_INTEGRATION=1 uv run python -m unittest test_svc_preprocess_integration   # 実モデル
 uv run python tools/smoke/run_smoke.py                       # 全経路（実装後の確認であってテストではない）
 ```
 
 | ファイル | 範囲 |
 |---|---|
-| `test_svc_model.py` | モデル・loader・配線 |
-| `test_svc_preprocess.py` | 整列 / 部分集合 / loudness / shard / 抽出 / chunk（M1） |
-| `test_svc_dataset.py` | 検査 / coverage / split / report（M0） |
+| `test_svc_model.py` | モデル・loader・配線・**`train.py` の純粋関数**（`_loader_kwargs` / `perf_snapshot`） |
+| `test_svc_preprocess.py` | 整列 / 部分集合 / loudness / shard / 抽出 / chunk / **phrase 命名と衝突** / **分量選択**（M1・M3） |
+| `test_svc_dataset.py` | 検査 / coverage / split / report（M0）/ **GTSinger の wav 選択**（M3） |
 | `test_svc_preprocess_integration.py` | **実 ContentVec / RMVPE。既定 skip**、`LEAPSINGER_INTEGRATION=1` で走る |
 
 - top-level の `test_<領域>.py` に置く。`unittest discover` は top-level の `test_*.py` しか拾わないので、
@@ -52,6 +52,10 @@ GPU も同じです。単体テストは CPU で通ること。`torch.cuda.is_av
 2. **補間の境界** — SSL 50 Hz と mel 172.265625 Hz は整数比になりません。
    端数が出る長さ（例: 短い phrase）で `T` がちょうど mel と一致することをテストする。
 3. **phrase 命名** — `{song}_{NNNN}`。崩れると `_song_of()` の曲単位分割が効かず leakage する。
+   **名前の一意性も契約にする。** 入れ子の深いコーパス（GTSinger）で名前が衝突すると
+   cache を**黙って上書き**し、例外にもならず phrase 数が減るだけになる（実測: 1 歌手
+   1,922 ファイルが 3 名に潰れた）。**曲名を ASCII に削らない**こと（日本語題が全部同じ名前に
+   なり、1,922 中 1,723 件が潰れた）。どちらも合成データでは出ない。
 4. **決定性** — 同じ入力・同じ設定で 2 回実行して **bit 一致**。ランダム性が混ざる箇所（256 次元の
    部分集合など）は seed から決まることをテストする。
 5. **manifest の完全性** — 再現に要る項目が欠けていないこと。項目を増やしたらテストも増やす。
@@ -77,3 +81,15 @@ GPU も同じです。単体テストは CPU で通ること。`torch.cuda.is_av
 - [ ] `uv run python tools/smoke/run_smoke.py` が通る（既存経路を壊していない）
 - [ ] 実装で分かった落とし穴を CLAUDE.md の「既知の落とし穴」へ書いた
 - [ ] **学習を伴う検証は vast.ai で行った**（手元では hook が止める。[vast-instance](../vast-instance/SKILL.md)）
+- [ ] hook のルールを足したなら `tools/hooks/test_guard.py` に**止めるケースと通すケースの両方**を足した
+
+## 6. 課金中に TDD を崩したくなったら
+
+インスタンスを止めたくない、という理由で実装を先に書きたくなります。**実際に 1 度崩しました**
+（`pick_wavs`）。そのときは:
+
+- **隠さない。** どの関数を実装先行で書いたかをコミットメッセージに書く。
+- **後から足すテストは「素朴な実装なら落ちる」内容にする。** 通るだけのテストは意味がない
+  （`pick_wavs` なら「先頭から取る実装だと技法が偏る」ことを落とす形にした）。
+- そもそも**インスタンスを立てる前に実装を済ませる**のが正しい。課金前の手元作業に
+  どこまで倒せるかを、借りる前に決めておく（[vast-instance](../vast-instance/SKILL.md) 1 節）。

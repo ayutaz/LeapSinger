@@ -37,7 +37,7 @@ source F0 + V/UV -> harmonic/noise excitation -> pseudo mel x0
 
 **決定:** ContentVec（`lengyue233/content-vec-best`、MIT、768 次元、layer 12）を採用し、学習には 768 から固定ランダムに選んだ 256 次元を使います。候補比較と根拠は [content encoder の選定](svc-content-encoder.md)。
 
-**決定:** mel grid への整列は **left（直前保持・左寄せ繰り返し）**。先読み 0 ms かつ元の SSL ベクトルを保持し、nearest（先読み 20 ms）や linear（先読み 20 ms・99.4% がブレンド）より劣る点がありません（[実測](svc-content-encoder.md) 6 節）。256 次元部分集合は **seed 0 を既定**とします（seed 1 との比較は M3 の前に実施）。いずれも再現性に直結するため、**選ばれた index そのもの**を manifest へ記録します。
+**決定:** mel grid への整列は **left（直前保持・左寄せ繰り返し）**。先読み 0 ms かつ元の SSL ベクトルを保持し、nearest（先読み 20 ms）や linear（先読み 20 ms・99.4% がブレンド）より劣る点がありません（[実測](svc-content-encoder.md) 6 節）。256 次元部分集合は **seed 0 を既定**とします（seed 1 との比較を M3 の前に 1 度実施。seed 1 が良い方向だったが、各 1 run では部分集合の差と run のばらつきを分離できないため既定は変えていない。[実測](svc-content-encoder.md)）。いずれも再現性に直結するため、**選ばれた index そのもの**を manifest へ記録します。
 
 **リスク:** SSL feature に source timbre が残ると、target singer への変換を妨げます。pitch/formant augmentation、speaker-adversarial loss、feature retrieval、encoder/layer の比較を候補とします。
 
@@ -79,6 +79,8 @@ waveform-like excitation -> STFT/mel -> pseudo mel x0
 condition と `x0` を使い、1-step で target mel を推定します。初期学習は flow loss と mel reconstruction loss を使い、安定後に optional GAN を検討します。
 
 **決定:** 最初の実音声 smoke と base training では GAN を無効にし、再構成と flow の成立を先に確認します。artifact や不安定化を分類できる状態になってから GAN を追加します。
+
+**確認済み（2026-08-30、M3）:** GAN 無効のまま 23 話者・約 18 時間の base を 30,000 step 学習し、flow 0.04717 → 0.00551、hold-out の eval/loss 0.02932 → 0.02311（単調減少）まで成立しました。`eval/varL`（GT に対する鮮鋭さの比、1.0 が同等）は 1.200 → 1.064 です。
 
 出力は NHVSing V3 互換を基準とします。
 

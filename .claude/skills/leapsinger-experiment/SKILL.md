@@ -29,10 +29,21 @@ ls log/                      # 既存の run を必ず確認してから決め�
 （例: `svc_target_lr8_01`）。継続のつもりで同名を使うのは正しいが、**そのときは
 「継続である」と明示的に判断したことを記録に残す**。
 
+### 既存の成果物（上書きしないこと）
+
+| run | 中身 | 使い方 |
+|---|---|---|
+| `m3_base` | **M3 の multi-singer base**。23 話者 / 約 18 時間 / 30,000 step。`ckpt_030000.pt` 134.7 MB | M4 の `--init_from` の入力。**別の `run_name` で fine-tune する** |
+| `svc_seed0` / `svc_seed1` | 256 次元部分集合の A/B（3,000 step） | 比較の記録。再利用しない |
+
+M3 の base は `spk_map` に 23 話者を持ちます（波音リツは **spk_id 22**、3 音源が同じ id）。
+config は `log/m3_base/config.yaml` が**その run の完全な記録**です（`configs/svc_base_multi.yaml`
+は `spk_map` を持たない recipe で、`tools/m3_corpus.py --write-config` が素材から埋めます）。
+
 ## 2. config を用意する
 
-- 公開 config（`configs/svc_base.yaml` / `3speaker_gan2d.yaml` / `3singer_ritsu3style_uv_gan2d.yaml`）
-  を直接編集しない。コピーして実験用の名前を付ける。
+- 公開 config（`configs/svc_base.yaml` / `configs/svc_base_multi.yaml` / `3speaker_gan2d.yaml` /
+  `3singer_ritsu3style_uv_gan2d.yaml`）を直接編集しない。コピーして実験用の名前を付ける。
 - `configs/.gitignore` は top-level の `configs/*.yaml` を無視する。**新しい config はコミットされない。**
   実験記録として残すなら、config の完全なコピーを成果物側に置く。
 - `mel` セクションは前処理・loader・励起 hop で共有される。**前処理時と 1 つでも違うと無音や崩れになる。**
@@ -103,6 +114,11 @@ uv run python -m train --config <config> \
 - seed、batch frames、peak VRAM、init checkpoint と load report
 - train/validation 曲線、生成サンプル、失敗例のリスト
 - best checkpoint の選び方、途中再開の履歴
+
+**M3 で実際に回収したもの（同じ粒度で残す）:** `ckpt_030000.pt`、`config.yaml`、`perf.json`、
+TensorBoard の events、**話者 25 分の `manifest.json` / `metadata.json`**、`m3_corpus.json`（素材の
+選定）、抽出と学習のログ、検証の JSON と WAV、`nvidia-smi` の出力。**インスタンスのディスクは
+破棄で消えるので、`destroy` の前に必ず回収する。**
 
 ## 7. 主張の範囲を守る
 

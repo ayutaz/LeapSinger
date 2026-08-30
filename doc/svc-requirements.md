@@ -86,6 +86,11 @@ multi-singer nonparallel singing corpus
 - 音域と発声スタイルの coverage を可視化済み。
 - train / validation / test を曲単位・録音セッション単位で分離済み。
 
+**確認済み（2026-08-30）: Gate A は入手できた素材について通過しました。** 5 コーパスに検査・
+coverage・split を実データで通し、権利条件を規約 URL と取得日つきで記録しています
+（[データセット台帳](svc-dataset-ledger.md)、[実行計画](svc-plan.md) M0）。**未取得の東北きりたん /
+No.7 は対象外**で、発声スタイルの coverage は技法ラベルを持つコーパスでのみ自動集計できます。
+
 ### Gate B: offline
 
 - held-out song と未知 source singer で変換できる。

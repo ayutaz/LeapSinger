@@ -32,6 +32,12 @@ BLOCK = [
     "vastai create instance 123 --image x",
     "vastai destroy instance 5",
     "uv run python -m unittest discover",
+    # `-m` だと `_gdrive` の兄弟 import が解決できず必ず ModuleNotFoundError（M3 で実測）
+    "uv run python -m preprocess.download_scripts.download_ritsu --voice all",
+    "uv run python -m preprocess.download_scripts.download_oniku",
+    # 空文字は「未設定」として扱われ CUDA が隠れない。`-1` でないと効かない（M3 で実測）
+    'CUDA_VISIBLE_DEVICES="" uv run python tools/nhv_indist.py',
+    "CUDA_VISIBLE_DEVICES= uv run python tools/m3_verify.py --ckpt x.pt",
 ]
 
 ALLOW = [
@@ -48,6 +54,10 @@ ALLOW = [
     "echo 'python -m foo'",
     "ls && uv run python -c \"import torch\"",
     "python -m train  # guard:allow",
+    "uv run python preprocess/download_scripts/download_ritsu.py --voice all",
+    "uv run python preprocess/download_scripts/download_natsume.py",
+    "CUDA_VISIBLE_DEVICES=-1 uv run python tools/nhv_indist.py --device cpu",
+    "uv run python -m preprocess.svc.run --wav-dir download/x --out data/x",
 ]
 
 

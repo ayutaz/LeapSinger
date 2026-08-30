@@ -50,9 +50,21 @@ RULES: list[tuple[str, str, str]] = [
      "`uv run python tools/vast.py create <offer_id> --yes` / `... destroy <id> --yes` を使う"),
 
     (r"(?<![\w./-])unittest\s+discover|python[^|;&]*-m\s+unittest\s+discover",
-     "discover は top-level の test_svc_model.py しか拾わず、通っても全体の検証にはならない",
-     "SVC の検証は `uv run python -m unittest test_svc_model`、"
-     "全経路は `uv run python tools/smoke/run_smoke.py`"),
+     "discover は収集条件が暗黙で、何件走ったのかが分からない",
+     "`uv run python -m unittest test_svc_model test_svc_preprocess test_svc_dataset`、"
+     "全経路は `uv run python tools/smoke/run_smoke.py`（unittest ステージが件数を表示する）"),
+
+    # M3 で実測。`-m` 実行だと `_gdrive` の兄弟 import が解決できず必ず失敗する。
+    (r"-m\s+preprocess\.download_scripts\.",
+     "取得スクリプトは `-m` で実行できない（`ModuleNotFoundError: No module named '_gdrive'`）",
+     "スクリプトのパスで実行する: "
+     "`uv run python preprocess/download_scripts/download_ritsu.py --voice all`"),
+
+    # M3 で実測。空文字は「未設定」扱いになり CUDA が隠れない。
+    (r"CUDA_VISIBLE_DEVICES=(\s|\"\"|'')",
+     "`CUDA_VISIBLE_DEVICES` に空文字を入れても CUDA は隠れない（未設定として扱われる）",
+     "隠したいなら `CUDA_VISIBLE_DEVICES=-1` にする。"
+     "`run_smoke.py --device cpu` は自動で渡す"),
 ]
 
 ALLOW_MARK = "# guard:allow"          # どうしても必要なときの明示的な脱出口
