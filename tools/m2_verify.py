@@ -69,11 +69,12 @@ def main() -> int:
             "loudness": z[f"{name}|loudness"]}
 
     model, cfg = load_acoustic(a.ckpt, device=a.device)
-    steps = a.num_steps or int(cfg.get("num_steps", 1))
+    # checkpoint の config は yaml のままではなく平坦化されている（train.py の ckpt_config）。
+    steps = a.num_steps or int(cfg.get("infer_steps", 1))
     mel_a = infer_svc_mel(model, item, num_steps=steps, device=a.device)
     mel_b = infer_svc_mel(model, item, num_steps=steps, device=a.device)
 
-    sr, hop = int(cfg["mel"]["sr"]), int(cfg["mel"]["hop"])
+    sr, hop = int(cfg["sample_rate"]), int(cfg["hop"])
     voc = load_vocoder(str(ROOT / "checkpoints" / "nhv_v3.onnx"))
     wav_pred = mel_to_wav(voc, mel_a, item["f0_logf0"], item["uv"])
     wav_gt = mel_to_wav(voc, gt_mel, item["f0_logf0"], item["uv"])

@@ -18,7 +18,7 @@ REST API を自前で叩かず、公式 CLI (`vastai`, ops extra) に委譲す�
     uv run python tools/vast.py destroy <instance_id> --yes
 
 `.env` は .gitignore 対象。次のどれかの名前でトークンを置く:
-VAST_API_KEY / VASTAI_API_KEY / VAST_AI_API_KEY / VAST_TOKEN / VASTAI_TOKEN
+VASTAI / VAST / VAST_API_KEY / VASTAI_API_KEY / VAST_AI_API_KEY / VAST_TOKEN / VASTAI_TOKEN
 """
 from __future__ import annotations
 
@@ -33,7 +33,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT / ".env"
 KEY_NAMES = ("VAST_API_KEY", "VASTAI_API_KEY", "VAST_AI_API_KEY",
-             "VAST_TOKEN", "VASTAI_TOKEN", "VAST_AI_TOKEN")
+             "VAST_TOKEN", "VASTAI_TOKEN", "VAST_AI_TOKEN",
+             "VASTAI", "VAST")
 
 # vast.ai 公式イメージ。cu130 の wheel を使うのでホスト CUDA も 13.0 系を選ぶ。
 # gcc を含むので Linux では torch.compile(inductor) が使える。
