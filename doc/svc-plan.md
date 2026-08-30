@@ -337,9 +337,11 @@ M5 通過。**決定:** M5 を通過していない teacher を基準に student
 
 **ゴール:** 部分 weight mapping と missing/unexpected key の allowlist を持つ loader、ロード結果の記録、そして**独立初期化した baseline との比較結果**。速度・品質の利得が示せない場合は採用しません。
 
+**成果物:** 部分ロード対応の loader、load report、warm-start あり/なしの checkpoint 2 本と比較結果。
+
 **前提:** M2 完了。**未実装:** 現在の `--init_from --finetune` は同一構造の checkpoint を前提としており、SVS→SVC の部分ロードには使えません。
 
-**実施判断:** M3 の学習コストが問題になった場合のみ。再利用できるのは flow backbone・励起・損失・discriminator・NHVSing interface で、phoneme embedding・length regulation・phoneme encoder の入力 projection は再利用できません。
+**実施条件:** M3 の学習コストが問題になった場合のみ。再利用できるのは flow backbone・励起・損失・discriminator・NHVSing interface で、phoneme embedding・length regulation・phoneme encoder の入力 projection は再利用できません。
 
 ### (B) NHVSing target fine-tune
 
@@ -353,15 +355,25 @@ M5 通過。**決定:** M5 を通過していない teacher を基準に student
 2. ground-truth mel を入力しても同じ artifact が出る。
 3. 音響モデルの誤差と vocoder の誤差を切り分けられている。
 
+**成果物:** fine-tune 前後の vocoder 重み、同一 mel を通した比較サンプル、artifact の切り分け記録。
+
 **前提:** M4 完了。まず既存重みを固定した baseline を作ってから比較します。**注意:** mel 分布への過適合、データ規約、重み配布条件を別途確認します。NHVSing V3 の配布重みは非商用データセットで学習されています。
 
 ### (C) GAN の導入
 
-**目的:** 質感の鮮明化。
+**目的:** flow 損失と再構成損失だけで学習した mel は平滑になりがちで、子音や息の質感が鈍ります。GAN はこれを鮮明化する後段です。一方で学習を不安定にし得るため、土台が固まる前に入れると「品質が悪いのは音響モデルか GAN か」を切り分けられなくなります。**土台の完成後に、別 run で**入れるのが目的です。
 
-**ゴール:** GAN なし baseline との A/B 比較。
+**ゴール:** 次の 3 つが揃った状態を完了とします。
 
-**実施条件:** flow + 再構成が安定し、artifact を分類できる状態になってから、**別 run** で導入します。既存 SVS と同様に `gan_start_step` 以降の二段構成とします。
+1. GAN なし baseline と**同一の split・seed・更新 budget**で A/B 比較してある。
+2. 客観指標と失敗分類の両方で改善が示せている（片方だけの改善は採用理由にしない）。
+3. 悪化した run も残してある。GAN は不安定化させ得るので、失敗の条件自体が知見になります。
+
+**成果物:** GAN あり/なしの checkpoint 2 本、A/B の指標と試聴結果、失敗分類。
+
+**前提:** M4 完了。flow + 再構成が安定し、artifact を分類できていること。
+
+**実施条件:** 上記の前提が成立してから、**別 run** で導入します。既存 SVS と同様に `gan_start_step` 以降の二段構成とします。baseline checkpoint は上書きしません。
 
 **注意:** GAN 経路（`_forward_flow_gan`）は `compute_loss` と数式・mask・RNG 順を一致させて再実装されています。片方だけ変更すると学習が一致しなくなります。
 
