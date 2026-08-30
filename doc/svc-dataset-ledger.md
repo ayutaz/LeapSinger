@@ -119,11 +119,15 @@ coverage」が**自動で集計できます**。現在 `preprocess/svc/coverage.
 
 ### 取得物の lineage（M0 ゴール 1 の checksum 項目）
 
-| 取得物 | 入手元 | 取得日 | サイズ | SHA-256 |
-|---|---|---|---:|---|
-| `Annotated VocalSet.zip` | [Zenodo 7061507](https://zenodo.org/records/7061507) | 2026-08-30 | 411,531,853 B | `52b50150c732e0835f8c7f3f1d6e631a679ea88843c3667ed7f8806abea53b69` |
+| 取得物 | 入手元 | 取得日 | サイズ | SHA-256 | ライセンス |
+|---|---|---|---:|---|---|
+| `Annotated VocalSet.zip` | [Zenodo 7061507](https://zenodo.org/records/7061507) | 2026-08-30 | 411,531,853 B | `52b50150c732e0835f8c7f3f1d6e631a679ea88843c3667ed7f8806abea53b69` | CC BY 4.0 |
+| `VocalSet11.zip`（音声） | [Zenodo 1442513](https://zenodo.org/records/1442513) | 2026-08-30 | 2,077,243,579 B | `df3dbe37b3dd840dce4bf7a4d2545d36daf38abc63a368f0e2003764aa7fa124` | CC BY 4.0 |
+| GTSinger 日本語分 | [HF GTSinger/GTSinger](https://huggingface.co/datasets/GTSinger/GTSinger) `Japanese/**` | 2026-08-30 | 取得中 | ディレクトリのため個別 | CC BY-NC-SA 4.0 |
 
-ライセンスはいずれも **CC BY 4.0**。帰属表示のみで商用利用も可です。
+**注意:** アーカイブ 1 つに 1 つの SHA-256 という粒度です。ディレクトリで配布されるもの
+（GTSinger）はファイル単位の checksum が要るので、前処理の manifest 側で記録します
+（[実行計画](svc-plan.md) M1 のゴール 5）。
 
 **確認済み:** [Annotated-VocalSet](https://zenodo.org/records/7061507)（CC BY 4.0、392 MB）を
 取得し、M0 の集計と split を実際に通しました。**このアーカイブに音声は入っておらず、
