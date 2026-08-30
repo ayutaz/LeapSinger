@@ -20,24 +20,30 @@ import os
 import time
 from pathlib import Path
 
+import matplotlib
 import numpy as np
 import torch
 import torch.nn as nn
 import yaml
-from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
-from leapsinger.config import MelSpec
-from dataset import (LeapSingerDataset, acoustic_collate_fn, FrameBasedBatchSampler)
-from svc_dataset import SVCFeatureDataset, svc_collate_fn
+from dataset import FrameBasedBatchSampler, LeapSingerDataset, acoustic_collate_fn
 from infer import infer_mel, infer_svc_mel, load_vocoder, mel_to_wav
-from leapsinger.modules.discriminators import (
-    JCUMelDiscriminator, Mel2DDiscriminator, d_loss_jcu, g_adv_fm_jcu, laplacian_var_ratio)
-from preprocess.vocab import Vocab
+from leapsinger.config import MelSpec
 from leapsinger.models.acoustic import HarmonicAcousticModel, HarmonicAcousticModelMultiSpk
 from leapsinger.models.svc import HarmonicSVCModel
-import matplotlib
+from leapsinger.modules.discriminators import (
+    JCUMelDiscriminator,
+    Mel2DDiscriminator,
+    d_loss_jcu,
+    g_adv_fm_jcu,
+    laplacian_var_ratio,
+)
+from preprocess.vocab import Vocab
+from svc_dataset import SVCFeatureDataset, svc_collate_fn
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 

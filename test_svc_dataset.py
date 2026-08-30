@@ -11,8 +11,8 @@ import unittest
 import numpy as np
 
 from preprocess.svc.audit import AuditThresholds, audit_clip, effective_bandwidth_hz
-from preprocess.svc.report import build_report
 from preprocess.svc.coverage import label_seconds, pitch_band_seconds, voiced_range
+from preprocess.svc.report import build_report
 from preprocess.svc.split import split_by_group
 
 

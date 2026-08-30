@@ -199,6 +199,8 @@ ContentVec を実行して特徴量 shard を作る抽出器も実装済みで�
 
 コードは MIT です（`LICENSE`）。ただし、同梱のボコーダー ONNX（`checkpoints/nhv_v3*.onnx`）、および Release で配布する学習済みモデルとその学習に使った歌声データベースは MIT の対象外で、それぞれのライセンス・規約に従います（下の謝辞、およびモデル配布物の `CREDITS.txt` を参照）。
 
+**実験的な SVC 経路は制約がさらに強くなります。** base モデルの学習に **GTSinger（CC BY-NC-SA 4.0、非商用かつ継承）** を使っており、ShareAlike が学習済み重みに及ぶかはライセンス条文からは決まりません。**そのため SVC の重みは配布していません**（研究・個人利用のみという決定。`doc/svc-dataset-ledger.md`）。また GTSinger は「本人の同意なく特定個人の歌声を生成すること」を禁じており、**声を変換するには target 歌手の同意が要ります**。ソフトウェアのライセンスとは別の話です。詳細は `LICENSE` の SVC 向け NOTICE を参照してください。
+
 ## 謝辞
 
 本モデルの学習に使わせていただいたデータセットと、関連するプロジェクトに感謝します。
@@ -208,5 +210,12 @@ ContentVec を実行して特徴量 shard を作る抽出器も実装済みで�
 - 波音リツ — https://www.canon-voice.com/voicebanks/
 - Neural Homomorphic Vocoder — https://www.isca-archive.org/interspeech_2020/liu20_interspeech.html
 - dsp（zjlww） — https://github.com/zjlww/dsp
+
+実験的な SVC 経路では次も使わせていただいています。
+
+- GTSinger（CC BY-NC-SA 4.0） — https://github.com/AaronZ345/GTSinger
+- VocalSet（CC BY 4.0。未知 source の評価用） — https://zenodo.org/records/1492453
+- ContentVec（MIT） — https://huggingface.co/lengyue233/content-vec-best
+- RMVPE — https://arxiv.org/abs/2306.15412 （重みは lj1995/VoiceConversionWebUI から取得。**ライセンス未確認**）
 
 配布する多話者モデルには、各データベースの規約に従って上記のクレジットを表示します。夏目悠李については **歌声DB制作: アマノケイ／音声提供者: 霧野蒼太** を表示し、「夏目悠李の出力音声に関する利用規約」をモデル配布物に同梱します。

@@ -19,7 +19,8 @@ import os
 
 import yaml
 
-from leapsinger.mel import SR, N_FFT, WIN_LEN, N_MELS, F_MIN, F_MAX
+from leapsinger.mel import F_MAX, F_MIN, N_FFT, N_MELS, SR, WIN_LEN
+
 from . import openutau_assets as oua
 
 

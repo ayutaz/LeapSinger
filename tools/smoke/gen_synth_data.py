@@ -16,7 +16,6 @@ mel は実際に leapsinger.mel.wav_to_mel_nhv（librosa）で計算するので
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 

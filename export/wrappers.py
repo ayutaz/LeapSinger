@@ -23,10 +23,11 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
+from leapsinger.mel import F_MAX, F_MIN, N_FFT, N_MELS, SR, WIN_LEN
 from leapsinger.models.acoustic_base import up2_linear
-from leapsinger.mel import SR, N_FFT, WIN_LEN, N_MELS, F_MIN, F_MAX
-from .excitation_onnx import HarmonicNoiseExcitationONNX
+
 from .attention_onnx import patch_attention_for_export
+from .excitation_onnx import HarmonicNoiseExcitationONNX
 
 
 def _lr_onnx(x, durations):

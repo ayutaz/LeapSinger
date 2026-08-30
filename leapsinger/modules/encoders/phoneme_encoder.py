@@ -3,9 +3,9 @@ Phoneme Encoder: FastSpeech2-style Feed-Forward Transformer (FFT).
 4 layers, 256d hidden.
 """
 import math
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 class FFTBlock(nn.Module):

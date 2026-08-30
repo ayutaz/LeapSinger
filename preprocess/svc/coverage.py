@@ -9,7 +9,7 @@
 """
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -30,12 +30,13 @@ def pitch_band_seconds(f0_hz: np.ndarray, uv: np.ndarray, *, frame_rate: float,
     無声フレームは数えません。音域を測るのに無声区間を混ぜても意味がないためです。
     """
     edges = [float(e) for e in edges_hz]
-    if any(b <= a for a, b in zip(edges, edges[1:])):
+    # 隣接ペアなので長さは意図的に 1 違う。strict=True にはできない。
+    if any(b <= a for a, b in zip(edges, edges[1:], strict=False)):
         raise ValueError(f"edges_hz must be strictly increasing; got {edges}")
 
     voiced = _voiced(f0_hz, uv)
     labels = ([f"-{edges[0]:.0f}"]
-              + [f"{a:.0f}-{b:.0f}" for a, b in zip(edges, edges[1:])]
+              + [f"{a:.0f}-{b:.0f}" for a, b in zip(edges, edges[1:], strict=False)]  # 隣接ペア
               + [f"{edges[-1]:.0f}-"])
     per_frame = 1.0 / float(frame_rate)
     counts = np.searchsorted(edges, voiced, side="right") if voiced.size else np.array([], int)
@@ -82,6 +83,7 @@ def label_seconds(labels: Sequence[str],
         raise ValueError("durations must be non-negative")
 
     total: dict[str, float] = {}
-    for label, duration in zip(labels, durations):
+    # ここは必ず一致する。ずれていれば集計が黙って狂うので例外にする。
+    for label, duration in zip(labels, durations, strict=True):
         total[str(label)] = total.get(str(label), 0.0) + duration
     return dict(sorted(total.items(), key=lambda kv: (-kv[1], kv[0])))

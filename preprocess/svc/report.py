@@ -12,8 +12,8 @@ RMVPE（181 MB）が要るためです。技法はラベルのある corpus（GT
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import asdict
-from typing import Callable, Mapping
 
 import numpy as np
 

@@ -30,8 +30,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from leapsinger.config import MelSpec                                    # noqa: E402
-from leapsinger.mel import wav_to_mel_nhv                                # noqa: E402
+from leapsinger.config import MelSpec  # noqa: E402
+from leapsinger.mel import wav_to_mel_nhv  # noqa: E402
 
 # NHVSing V3 の学習データ（doc/svc-dataset-ledger.md 7 節）に含まれるか。
 DEFAULT_SETS = [
@@ -201,7 +201,7 @@ def main() -> int:
             print(f"  {name:<9} {path.name[:38]:<38} melL1 {row['mel_l1']:.4f} "
                   f"voiced {voiced_ratio:.2f}", flush=True)
 
-        def agg(key):
+        def agg(key, rows=rows):        # rows を明示的に束縛（ループ変数の捕捉を避ける）
             vals = [r[key] for r in rows if key in r]
             return {"mean": float(np.mean(vals)), "median": float(np.median(vals)),
                     "std": float(np.std(vals)), "n": len(vals)} if vals else None

@@ -27,10 +27,11 @@ import os
 import torch
 
 from infer import load_acoustic
-from .wrappers import AcousticExportWrapperA, AcousticExportWrapperB
+
 from . import dsconfig as dscfg
-from . import spk_embed as spk
 from . import postprocess as post
+from . import spk_embed as spk
+from .wrappers import AcousticExportWrapperA, AcousticExportWrapperB
 
 
 def _vocab_size(model):

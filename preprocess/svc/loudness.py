@@ -11,10 +11,9 @@ phrase 間の強弱差が消え、歌の表情が平坦になるためです。
 """
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 import numpy as np
-
 
 FLOOR = 1e-5           # 無音（RMS = 0）で -inf にしないための下限。mel 側の clamp と同じ値
 

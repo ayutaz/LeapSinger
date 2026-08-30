@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -46,7 +45,7 @@ class PitchAlgorithm(ABC):
 
     def _sanity_check(
         self, pitch: np.ndarray, periodicity: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         periodicity = np.nan_to_num(periodicity, nan=0.0)
         pitch = np.nan_to_num(pitch, nan=0.0)
 
@@ -64,7 +63,7 @@ class PitchAlgorithm(ABC):
         split_semitone_threshold: float = 0.8,
         min_note_duration: float = 0.05,
         unvoiced_grace_period: float = 0.02,
-    ) -> List[Dict[str, float]]:
+    ) -> list[dict[str, float]]:
         frame_period = self.hop_size / self.sample_rate
         notes = []
         current_note_segment = None
@@ -155,11 +154,8 @@ class PitchAlgorithm(ABC):
     def extract_pitch(
         self,
         audio: np.ndarray,
-        thresholds: Optional[Union[float, List[float]]] = None,
-    ) -> Union[
-        Tuple[np.ndarray, np.ndarray, List[Dict[str, float]]],
-        List[Tuple[np.ndarray, np.ndarray, List[Dict[str, float]]]],
-    ]:
+        thresholds: float | list[float] | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, list[dict[str, float]]] | list[tuple[np.ndarray, np.ndarray, list[dict[str, float]]]]:
         if thresholds is None:
             thresholds = [self._get_default_threshold()]
         elif isinstance(thresholds, (int, float)):
@@ -187,7 +183,7 @@ class ContinuousPitchAlgorithm(PitchAlgorithm):
     @abstractmethod
     def _extract_raw_pitch_and_periodicity(
         self, audio: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         pass
 
     def _get_default_threshold(self) -> float:
@@ -195,7 +191,7 @@ class ContinuousPitchAlgorithm(PitchAlgorithm):
 
     def extract_continuous_periodicity(
         self, audio: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         self._validate_audio(audio)
         times, pitch, periodicity = self._extract_raw_pitch_and_periodicity(audio)
         pitch, periodicity = self._sanity_check(pitch, periodicity)
@@ -205,8 +201,8 @@ class ContinuousPitchAlgorithm(PitchAlgorithm):
         return aligned_pitch, aligned_periodicity
 
     def _extract_continuous_multiple_thresholds(
-        self, audio: np.ndarray, thresholds: List[float]
-    ) -> List[Tuple[np.ndarray, np.ndarray, List[Dict[str, float]]]]:
+        self, audio: np.ndarray, thresholds: list[float]
+    ) -> list[tuple[np.ndarray, np.ndarray, list[dict[str, float]]]]:
         pitch, confidence = self.extract_continuous_periodicity(audio)
         results = []
         for threshold in thresholds:
@@ -220,15 +216,15 @@ class ThresholdPitchAlgorithm(PitchAlgorithm):
     @abstractmethod
     def _extract_pitch_with_threshold(
         self, audio: np.ndarray, threshold: float
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         pass
 
     def _get_default_threshold(self) -> float:
         return 0.5
 
     def _extract_threshold_multiple_thresholds(
-        self, audio: np.ndarray, thresholds: List[float]
-    ) -> List[Tuple[np.ndarray, np.ndarray, List[Dict[str, float]]]]:
+        self, audio: np.ndarray, thresholds: list[float]
+    ) -> list[tuple[np.ndarray, np.ndarray, list[dict[str, float]]]]:
         self._validate_audio(audio)
         results = []
         target_times = self._compute_target_times(len(audio))
@@ -247,7 +243,7 @@ class ThresholdPitchAlgorithm(PitchAlgorithm):
 
     def extract_continuous_periodicity(
         self, audio: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         raise NotImplementedError(
             f"{self.__class__.__name__} doesn't support continuous periodicity extraction. "
             f"Use extract_pitch() instead or check supports_continuous_periodicity property."

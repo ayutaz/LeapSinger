@@ -1,6 +1,7 @@
 MIT License
 
 Copyright (c) 2026 wavtechyukky
+Copyright (c) 2026 ayutaz
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -35,3 +36,39 @@ cover the following, which have their own separate terms:
     Namine Ritsu). These are governed by each database's own terms of use — see
     `CREDITS.txt` bundled with the model release. In particular, credit and,
     for some databases, the bundled terms of use must be kept when redistributing.
+
+--------------------------------------------------------------------------------
+NOTICE — the singing-voice conversion (SVC) path
+
+The SVC path on the `feature/svc` branch pulls in further third-party material.
+The MIT license above still covers only this repository's own source code.
+
+Downloaded at run time, not bundled here:
+
+  - ContentVec (`lengyue233/content-vec-best`) — content encoder, MIT.
+  - RMVPE pitch-extractor weights, fetched from
+    `lj1995/VoiceConversionWebUI` on first use. **Its license has not been
+    verified by this project.** Check it before relying on RMVPE for anything
+    beyond local research use.
+
+Training data for the SVC base model — **more restrictive than the SVS side**:
+
+  - GTSinger (https://github.com/AaronZ345/GTSinger) — **CC BY-NC-SA 4.0**.
+    Non-commercial, and ShareAlike. Whether ShareAlike reaches model weights
+    trained on it is not settled by the license text, so **any redistribution of
+    SVC weights would need that question answered first.**
+  - The three Japanese databases above, under their own terms.
+  - VocalSet (https://zenodo.org/records/1492453, CC BY 4.0) is used only as an
+    unseen-source *test* set, not for training.
+
+  **No SVC model weights are distributed.** The project decision is research and
+  personal use only, with no model distribution
+  (`doc/svc-dataset-ledger.md`). Distributing SVC weights would require redoing
+  that decision and the material selection.
+
+Consent, specifically for voice conversion:
+
+  - GTSinger's own README forbids generating the singing voice of a specific
+    person without that person's consent. SVC is exactly that capability, so
+    **converting a voice requires the target singer's consent**, independently
+    of what any software license permits.

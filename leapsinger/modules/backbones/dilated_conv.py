@@ -5,11 +5,11 @@ WaveNet/DiffWave 型の gated dilated conv（tanh×sigmoid ゲート）。入力
 t∈[0,1] 埋め込み + 条件 cond。dilation 列は DILATION_SCHEDULES から選ぶ（未指定時は n_cycles×[1,3,9,27,81]）。
 """
 import math
+
 import torch
 import torch.nn as nn
 
 from leapsinger.modules.backbones.gated_res_block import GatedResBlock
-
 
 # dilation スケジュール（各層の dilation 列。層数=len）。速度/容量は「層数」で決まる。
 #   pow2_15: DiffWave 論文準拠の 2の冪、15層（既定で全 config が使用）。

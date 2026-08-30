@@ -18,10 +18,11 @@ from pathlib import Path
 import numpy as np
 
 from leapsinger.config import MelSpec
-from .vocab import DEFAULT_VOCAB
-from .phrase_cut import find_phrase_spans, cut_phrases
-from .f0_rmvpe import extract_f0_rmvpe
 from leapsinger.mel import wav_to_mel_nhv
+
+from .f0_rmvpe import extract_f0_rmvpe
+from .phrase_cut import cut_phrases, find_phrase_spans
+from .vocab import DEFAULT_VOCAB
 
 # Non-canonical silence tokens -> `pau` (breath included: the example DBs are human singers and
 # breath is silenced). Edge / GlottalStop stay (they are canonical phonemes).

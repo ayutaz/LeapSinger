@@ -19,7 +19,7 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
 
 環境構築:
 
-    uv sync --extra train --extra export       # 依存を .venv へ（推論のみなら uv sync）
+    uv sync --extra train --extra export --extra dev   # 依存を .venv へ（推論のみなら uv sync）
     uv add <package>                           # 依存を足すときは常に uv add（pyproject にも記録される）
     uv add --optional train <package>          # extra に足すとき（train / export）
 
@@ -72,6 +72,7 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
     LEAPSINGER_INTEGRATION=1 uv run python -m unittest test_svc_preprocess_integration -v  # 実モデル（既定は skip）
     uv run python -m unittest test_svc_model.HarmonicSVCModelTests.test_forward_and_infer_reuse_flow_with_svc_conditioning
     uv run python tools/hooks/test_guard.py    # コマンド guard の回帰テスト
+    uv run ruff check .                        # lint（`--fix` で自動修正）
 
 `run_smoke.py` は 3rd-party API・学習・自動再開・推論・ボコーダー・前処理・ONNX 書き出しまでを 1 コマンドで通し、終了コードが失敗ステージ数になります。**依存やバージョンを変えた後、環境を移した後、学習を始める前に必ず走らせること。** 入力は合成波形なので品質の検証にはならず、配線が壊れていないことだけを示します。
 

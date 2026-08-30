@@ -32,8 +32,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from leapsinger.config import MelSpec                                    # noqa: E402
-from tools.audio_metrics import band_profile, format_profiles            # noqa: E402
+from leapsinger.config import MelSpec  # noqa: E402
+from tools.audio_metrics import band_profile, format_profiles  # noqa: E402
 
 
 def main() -> int:
@@ -64,7 +64,6 @@ def main() -> int:
     a = ap.parse_args()
 
     import soundfile as sf
-    import torch
 
     from infer import infer_svc_mel, load_acoustic, load_vocoder, mel_to_wav
     from preprocess.svc.encoders import ContentVecEncoder, RmvpeF0

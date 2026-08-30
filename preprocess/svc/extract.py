@@ -13,7 +13,8 @@ frame grid（50 Hz）のままです。**整列は 2 段目の仕事**です。
 """
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 

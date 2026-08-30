@@ -29,7 +29,10 @@ class HarmonicAcousticModel(HarmonicAcousticBase):
         """F0倍音＋白色ノイズ励起の正規化 mel [B,mel,T]（flow の出発点 x0）。
         harm_wave 指定時（事前計算した決定論的倍音波形）は毎ステップ「フレッシュノイズ+STFT」だけ
         （倍音和の再計算を省略）。None なら従来どおりフル生成。どちらもノイズは毎回新規。"""
-        from leapsinger.modules.harmonic_excitation import harmonic_noise_mel_torch, harm_wave_to_mel
+        from leapsinger.modules.harmonic_excitation import (
+            harm_wave_to_mel,
+            harmonic_noise_mel_torch,
+        )
         if harm_wave is not None:                    # キャッシュ経路: 倍音波形→noise+STFT のみ
             exc = harm_wave_to_mel(harm_wave, noise_ratio=self.noise_ratio,
                                    scale=self.exc_scale, hop=self.exc_hop)          # [B,mel,T]

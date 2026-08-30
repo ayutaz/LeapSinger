@@ -52,7 +52,7 @@ class Vocab:
         self.silence: frozenset[str] = frozenset(SILENCE_TOKENS & set(self.phonemes))
 
     @classmethod
-    def load(cls, path: str | None = None) -> "Vocab":
+    def load(cls, path: str | None = None) -> Vocab:
         """Load from a phoneme-list file (default: the bundled Japanese ``dict/ja.phonemes``)."""
         return cls(load_phonemes(path or DEFAULT_PHONEMES_PATH))
 

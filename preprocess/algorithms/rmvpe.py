@@ -1,6 +1,5 @@
 import urllib.request
 from pathlib import Path
-from typing import Tuple
 
 import numpy as np
 import torch
@@ -132,7 +131,7 @@ class MelSpectrogram(torch.nn.Module):
 
 class ConvBlockRes(nn.Module):
     def __init__(self, in_channels, out_channels, momentum=0.01):
-        super(ConvBlockRes, self).__init__()
+        super().__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(
                 in_channels=in_channels,
@@ -172,7 +171,7 @@ class ResEncoderBlock(nn.Module):
     def __init__(
         self, in_channels, out_channels, kernel_size, n_blocks=1, momentum=0.01
     ):
-        super(ResEncoderBlock, self).__init__()
+        super().__init__()
         self.n_blocks = n_blocks
         self.conv = nn.ModuleList()
         self.conv.append(ConvBlockRes(in_channels, out_channels, momentum))
@@ -195,7 +194,7 @@ class ResDecoderBlock(nn.Module):
     def __init__(
         self, in_channels, out_channels, stride, n_blocks=1, momentum=0.01
     ):
-        super(ResDecoderBlock, self).__init__()
+        super().__init__()
         # Adjust output padding based on stride
         if stride == (1, 2):
             out_padding = (0, 1)
@@ -247,7 +246,7 @@ class Encoder(nn.Module):
         out_channels=16,
         momentum=0.01,
     ):
-        super(Encoder, self).__init__()
+        super().__init__()
         self.n_encoders = n_encoders
         self.bn = nn.BatchNorm2d(in_channels, momentum=momentum)
         self.layers = nn.ModuleList()
@@ -282,7 +281,7 @@ class Intermediate(nn.Module):
     def __init__(
         self, in_channels, out_channels, n_inters, n_blocks, momentum=0.01
     ):
-        super(Intermediate, self).__init__()
+        super().__init__()
         self.n_inters = n_inters
         self.layers = nn.ModuleList()
         self.layers.append(
@@ -305,7 +304,7 @@ class Decoder(nn.Module):
     def __init__(
         self, in_channels, n_decoders, stride, n_blocks, momentum=0.01
     ):
-        super(Decoder, self).__init__()
+        super().__init__()
         self.layers = nn.ModuleList()
         self.n_decoders = n_decoders
         for i in range(self.n_decoders):
@@ -333,7 +332,7 @@ class DeepUnet0(nn.Module):
         in_channels=1,
         en_out_channels=16,
     ):
-        super(DeepUnet0, self).__init__()
+        super().__init__()
         self.encoder = Encoder(
             in_channels,
             N_MELS,
@@ -361,7 +360,7 @@ class DeepUnet0(nn.Module):
 
 class BiGRU(nn.Module):
     def __init__(self, input_features, hidden_features, num_layers):
-        super(BiGRU, self).__init__()
+        super().__init__()
         self.gru = nn.GRU(
             input_features,
             hidden_features,
@@ -386,7 +385,7 @@ class E2E0(nn.Module):
         in_channels=1,
         en_out_channels=16,
     ):
-        super(E2E0, self).__init__()
+        super().__init__()
         self.mel = MelSpectrogram(
             N_MELS,
             SAMPLE_RATE,
@@ -564,7 +563,7 @@ class RMVPEPitchAlgorithm(ContinuousPitchAlgorithm):
 
     def _extract_raw_pitch_and_periodicity(
         self, audio: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Extract raw pitch and periodicity from audio
 

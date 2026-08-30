@@ -95,7 +95,6 @@ def to_fp16(path_in: str, path_out: str, *, keep_io_fp32: bool = True,
 
     init = {t.name: t for t in g.initializer}
     input_names = {i.name for i in g.input}
-    output_names = {o.name for o in g.output}
 
     # ---- initializers: conv-only float32 -> fp16 in place; shared -> keep fp32 + fp16 dup ----
     used_keep, used_conv = set(), set()

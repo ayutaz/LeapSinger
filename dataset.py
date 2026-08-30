@@ -18,14 +18,13 @@ import os
 import random
 import re
 from pathlib import Path
-from typing import List
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset, Sampler
 
-from preprocess.vocab import PAU_ID
 from preprocess.phrase_cut import clip_pau_gain
+from preprocess.vocab import PAU_ID
 
 _MEL_FLOOR = math.log(1e-5)     # ln-mel silence floor (matches the preprocess mel clamp)
 
@@ -61,7 +60,7 @@ class LeapSingerDataset(Dataset):
         self._cache: dict = {}
         self._harm_cache: dict = {}      # index i -> 決定論的倍音波形 np[float32, n]（warm_harm_cache で充填）
         self.files: list = []            # (shard_path, phrase_name, db_dir)
-        self.frame_counts: List[int] = []
+        self.frame_counts: list[int] = []
         frame_rate = None
 
         for d in dirs:
@@ -161,8 +160,9 @@ class LeapSingerDataset(Dataset):
         （倍音和の再計算を省略）。**各フレーズ standalone（batch=1）で計算**＝バッチのパディング境界
         アーティファクトが無く、推論時（batch=1）の励起と一致。DataLoader を作る前に呼ぶこと（fork
         worker が COW で共有）。pitch_aug 時は f0 が毎step変わるので呼ばない。"""
-        from leapsinger.modules.harmonic_excitation import harmonic_wave
         import time as _t
+
+        from leapsinger.modules.harmonic_excitation import harmonic_wave
         dev = torch.device(device)
         n_tot = len(self.files); _t0 = _t.time()
         print(f"[dataset] warming harm cache: {n_tot} phrases (standalone, ~1min)...", flush=True)

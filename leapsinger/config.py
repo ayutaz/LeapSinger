@@ -8,7 +8,7 @@ The same MelSpec is shared by preprocessing (mel + F0 frame rate), the dataset l
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 
 
 @dataclass
@@ -26,7 +26,7 @@ class MelSpec:
         return self.sr / self.hop
 
     @classmethod
-    def from_dict(cls, d: dict | None) -> "MelSpec":
+    def from_dict(cls, d: dict | None) -> MelSpec:
         if not d:
             return cls()
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})

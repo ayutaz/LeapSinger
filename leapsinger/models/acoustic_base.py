@@ -8,10 +8,10 @@ phoneme(attention encoder) → length regulate → + f0 (+ uv) (+ speaker) (+ st
 import torch
 import torch.nn as nn
 
-from leapsinger.modules.encoders.phoneme_encoder import PhonemeEncoder
-from leapsinger.modules.length_regulator import LengthRegulator
-from leapsinger.modules.flow.mel_dilated_rectified_flow import MelDilatedRectifiedFlow
 from leapsinger.modules.backbones.dilated_conv import DILATION_SCHEDULES
+from leapsinger.modules.encoders.phoneme_encoder import PhonemeEncoder
+from leapsinger.modules.flow.mel_dilated_rectified_flow import MelDilatedRectifiedFlow
+from leapsinger.modules.length_regulator import LengthRegulator
 
 
 class HarmonicAcousticBase(nn.Module):

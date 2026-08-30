@@ -18,6 +18,7 @@ import torch
 def verify_excitation(f0_hz=None, n_harm=50, hop=256, mel_bins=128) -> dict:
     """MAE between the ONNX-friendly excitation and the training excitation (both noise-free)."""
     from leapsinger.modules.harmonic_excitation import harmonic_noise_mel_torch
+
     from .excitation_onnx import HarmonicNoiseExcitationONNX
     if f0_hz is None:
         t = np.linspace(0, 3, 400)

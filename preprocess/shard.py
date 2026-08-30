@@ -20,6 +20,7 @@ import os
 import numpy as np
 
 from leapsinger.config import MelSpec
+
 from .vocab import DEFAULT_VOCAB, Vocab
 
 
@@ -71,7 +72,7 @@ def combine_db(db_dir: str, mel: MelSpec | None = None, vocab=None) -> int:
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
     sz = os.path.getsize(os.path.join(db_dir, "shard.npz")) / 1e6
-    wtag = f" + shard_wav.npz" if wavs else ""
+    wtag = " + shard_wav.npz" if wavs else ""
     print(f"  {os.path.basename(db_dir)}: {len(files)} phrases -> shard.npz ({sz:.0f}MB){wtag}")
     return len(files)
 

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import glob
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -17,7 +16,7 @@ import torch
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
-from infer import load_acoustic, infer_mel, infer_svc_mel, load_vocoder, mel_to_wav  # noqa: E402
+from infer import infer_mel, infer_svc_mel, load_acoustic, load_vocoder, mel_to_wav  # noqa: E402
 
 work, kind, dev = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
 run = "svc" if kind == "svc" else "svs_pp"

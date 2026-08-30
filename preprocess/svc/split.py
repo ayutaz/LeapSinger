@@ -12,7 +12,7 @@ group は曲、または収録セッションです。フレーズ単位で切�
 from __future__ import annotations
 
 import random
-from typing import Mapping
+from collections.abc import Mapping
 
 
 def split_by_group(names: Mapping[str, str], *, seed: int,

@@ -7,8 +7,8 @@ wav_to_mel と同一の recipe に統一するための共有関数。
 
 DiffSinger/OpenUtau 標準値: 44100 / n_fft2048 / win2048 / hop512 / 128mel / fmin40 / fmax16000 / ln。
 """
-import numpy as np
 import librosa
+import numpy as np
 
 # DiffSinger/NHVSing 標準(パイプラインからは定数で上書き可能だが既定はこれ)
 SR      = 44_100

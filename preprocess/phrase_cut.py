@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import List, Tuple
 
 import numpy as np
 
@@ -67,7 +66,8 @@ def _write_textgrid(path: Path, labels, durs, total_dur: float) -> None:
              '        xmin = 0', f'        xmax = {total_dur:.6f}',
              f'        intervals: size = {N}']
     t = 0.0
-    for i, (lab, d) in enumerate(zip(labels, durs), 1):
+    # labels と durs は同じ長さの想定。既存挙動を変えないため strict=False を明示する。
+    for i, (lab, d) in enumerate(zip(labels, durs, strict=False), 1):
         xmin = t
         t += float(d)
         xmax = total_dur if i == N else t
@@ -105,7 +105,7 @@ def find_phrase_spans(
     cl_pau_sec:        float = _CL_PAU_SEC,
     hop_size:          int   = 512,
     sr:                int   = 44_100,
-) -> List[Tuple[int, int, int]]:
+) -> list[tuple[int, int, int]]:
     """フレーズ区間 [(start_frame, end_frame, n_art_lead, n_art_trail), ...] を返す。
     境界は hop_size 倍数(mel フレーム境界)にスナップ済み。n_art_lead/n_art_trail>0 のとき
     その数だけ先頭に人工静音フレームを prepend する(cut_phrases 側で処理)。"""
@@ -159,7 +159,7 @@ def find_phrase_spans(
                 return e - s
         return 0.0
 
-    spans: List[Tuple[int, int, int, int]] = []
+    spans: list[tuple[int, int, int, int]] = []
     for c_s, c_e in split_contents:
         prev_sil = _sil_before(c_s)
         next_sil = _sil_after(c_e)

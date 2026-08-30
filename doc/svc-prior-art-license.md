@@ -38,6 +38,26 @@ Seed-VC は zero-shot を主眼に含みますが、本開発は target fine-tun
 | [pyshiro](https://github.com/wavtechyukky/pyshiro) | GPL-3.0 | 呼び出し・同梱・派生の境界を法務確認 |
 | [Seed-VC](https://github.com/Plachtaa/seed-vc) | GPL-3.0 | baseline として外部実行し、コードを混在させない |
 
+**SVC 経路で新たに入るもの（2026-08-31 追記）。** 上の表は SVS 前提で、SVC の依存が
+載っていませんでした。
+
+| 対象 | 確認内容 | 実務上の扱い |
+|---|---|---|
+| [ContentVec](https://huggingface.co/lengyue233/content-vec-best) | **MIT**（[選定](svc-content-encoder.md) 3 節） | 実行時に取得。凍結して使うだけで再学習しない |
+| RMVPE の重み | **未確認。** `lj1995/VoiceConversionWebUI` から実行時に取得する | **手元の研究利用を超える前に確認が要る。** 現時点で確認済みと書かないこと |
+| [GTSinger](https://github.com/AaronZ345/GTSinger) | **CC BY-NC-SA 4.0**（非商用・継承） | base の学習素材。**ShareAlike が学習済み重みに及ぶかは条文から決まらない** |
+| [VocalSet](https://zenodo.org/records/1492453) | **CC BY 4.0** | 未知 source の**評価にのみ**使用。学習には入れていない |
+| **SVC の学習済み重み** | GTSinger の NC・SA が上流にある | **配布していない。** 研究・個人利用のみという決定（[台帳](svc-dataset-ledger.md) 6 節）。配布へ移るならこの決定と素材選定をやり直す |
+
+**SVC の重みは SVS の重みより制約が強くなります。** SVS 側は日本語 3 DB の規約が問題でしたが、
+SVC の base はそれに加えて **CC BY-NC-SA の GTSinger** を含みます。**非商用**は明確で、
+**継承（ShareAlike）が重みに及ぶか**は未解決です。この 2 点は「配布しない」という決定によって
+現時点では顕在化していませんが、**決定を変えるなら先に答えを出す必要があります**。
+
+**同意の問題は、ライセンスとは別に存在します。** GTSinger の README は「本人の同意なく特定個人の
+歌声を生成すること」を明示的に禁じています。**SVC はまさにその能力**なので、
+**変換先の歌手の同意**が前提です。ソフトウェアのライセンスが許すかどうかとは別の話です。
+
 これは法的助言ではありません。実際の配布・商用利用前に、正確な weight file、dataset version、出力音声規約、依存関係を対象として確認します。
 
 ## 4. データ権利

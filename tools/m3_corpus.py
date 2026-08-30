@@ -108,6 +108,7 @@ def download_gtsinger(dest: Path, langs: list[str], per_singer: int) -> None:
     1 桁減ります。`--max-hours` は抽出時にさらに正確に切ります。
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
+
     from huggingface_hub import HfApi, hf_hub_download
 
     dest.mkdir(parents=True, exist_ok=True)

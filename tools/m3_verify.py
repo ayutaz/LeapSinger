@@ -41,8 +41,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from leapsinger.config import MelSpec                                    # noqa: E402
-from tools.audio_metrics import band_profile                             # noqa: E402
+from leapsinger.config import MelSpec  # noqa: E402
+from tools.audio_metrics import band_profile  # noqa: E402
 
 
 def cos_per_frame(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -88,7 +88,6 @@ def main() -> int:
     import torch
 
     from infer import infer_svc_mel, load_acoustic, load_vocoder, mel_to_wav
-    from leapsinger.mel import wav_to_mel_nhv
     from preprocess.svc.encoders import ContentVecEncoder, RmvpeF0
     from preprocess.svc.extract import _resample, extract_phrase
     from preprocess.svc.shard import features_to_item

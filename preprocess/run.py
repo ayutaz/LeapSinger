@@ -17,6 +17,7 @@ import os
 import yaml
 
 from leapsinger.config import MelSpec
+
 from . import recipes
 from .lab import process_file
 from .shard import combine_db

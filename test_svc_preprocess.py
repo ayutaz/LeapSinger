@@ -21,8 +21,8 @@ from leapsinger.mel import wav_to_mel_nhv
 from preprocess.svc.align import align_left
 from preprocess.svc.chunk import chunk_spans, voiced_ratio
 from preprocess.svc.extract import extract_phrase
-from preprocess.svc.shard import build_shard, features_to_item
 from preprocess.svc.loudness import dataset_stats, frame_log_rms, normalize_with_stats
+from preprocess.svc.shard import build_shard, features_to_item
 from preprocess.svc.subset import apply_subset, subset_indices
 
 
@@ -480,12 +480,16 @@ class ExtractPhraseTests(unittest.TestCase):
 
     def test_rejects_an_f0_extractor_that_returns_the_wrong_length(self):
         # 契約違反は黙って直さずに落とす。
-        bad = lambda wav, sr, hop: (np.zeros(3, np.float32), np.zeros(3, np.float32))
+        def bad(wav, sr, hop):
+            return np.zeros(3, np.float32), np.zeros(3, np.float32)
+
         with self.assertRaises(ValueError):
             self._extract(f0_extract=bad)
 
     def test_rejects_an_encoder_that_returns_a_non_2d_array(self):
-        bad = lambda wav16, sr: np.zeros(10, dtype=np.float32)
+        def bad(wav16, sr):
+            return np.zeros(10, dtype=np.float32)
+
         with self.assertRaises(ValueError):
             self._extract(content_encoder=bad)
 
@@ -503,7 +507,7 @@ class ChunkSpansTests(unittest.TestCase):
     def test_covers_the_signal_in_order_without_gaps(self):
         spans = chunk_spans(self.SR * 10, self.SR, chunk_sec=3.0, min_sec=0.5)
         self.assertEqual(spans[0][0], 0)
-        for (a, b), (c, d) in zip(spans, spans[1:]):
+        for (a, b), (c, _) in zip(spans, spans[1:], strict=False):   # 隣接ペア
             self.assertEqual(b, c, "隙間や重複がある")
             self.assertLess(a, b)
 
@@ -702,6 +706,7 @@ class RmvpeManifestTests(unittest.TestCase):
 
     def test_the_checksum_matches_the_weight_file_when_it_exists(self):
         import hashlib
+
         from preprocess.svc.encoders import RMVPE_WEIGHT_PATH, RmvpeF0
         if not RMVPE_WEIGHT_PATH.exists():
             self.skipTest("RMVPE の重みが未取得")

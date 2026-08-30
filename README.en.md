@@ -203,6 +203,8 @@ evaluation, prior art/licensing, implementation status, and sources is indexed a
 
 The code is MIT (`LICENSE`). However, the bundled vocoder ONNX files (`checkpoints/nhv_v3*.onnx`), the trained models distributed via Releases, and the singing databases used to train them are **not** covered by MIT — they follow their own licenses and terms of use (see the Acknowledgments below and `CREDITS.txt` in the model release).
 
+**The experimental SVC path is more restricted.** Its base model is trained on **GTSinger (CC BY-NC-SA 4.0 — non-commercial, ShareAlike)**, and whether ShareAlike reaches trained weights is not settled by the license text. **No SVC weights are distributed**: the project decision is research and personal use only (`doc/svc-dataset-ledger.md`). GTSinger's README also forbids generating a specific person's singing voice without their consent, so **converting a voice requires the target singer's consent**, independently of any software license. See the SVC NOTICE in `LICENSE`.
+
 ## Acknowledgments
 
 Thanks to the datasets used to train this model, and to the related projects.
@@ -212,5 +214,12 @@ Thanks to the datasets used to train this model, and to the related projects.
 - Namine Ritsu — https://www.canon-voice.com/voicebanks/
 - Neural Homomorphic Vocoder — https://www.isca-archive.org/interspeech_2020/liu20_interspeech.html
 - dsp (zjlww) — https://github.com/zjlww/dsp
+
+The experimental SVC path additionally uses:
+
+- GTSinger (CC BY-NC-SA 4.0) — https://github.com/AaronZ345/GTSinger
+- VocalSet (CC BY 4.0; unseen-source evaluation only) — https://zenodo.org/records/1492453
+- ContentVec (MIT) — https://huggingface.co/lengyue233/content-vec-best
+- RMVPE — https://arxiv.org/abs/2306.15412 (weights fetched from lj1995/VoiceConversionWebUI; **license not verified**)
 
 The distributed multi-speaker models display the credits above, following each database's terms. For Natsume Yuuri, we display **database production: アマノケイ / voice provider: 霧野蒼太**, and we bundle the "Terms of use for Natsume Yuuri's output audio" with the model distribution.

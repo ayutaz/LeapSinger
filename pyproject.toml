@@ -36,6 +36,9 @@ train = [
 ops = [
     "vastai>=1.5.6",
 ]
+dev = [
+    "ruff>=0.16.5",
+]
 
 # Notes:
 # - F0 extraction uses RMVPE (a neural pitch estimator). See README for the weight download.
@@ -63,3 +66,32 @@ explicit = true
 torch = [
     { index = "pytorch-cu130", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
 ]
+
+[tool.ruff]
+line-length = 100          # 既存コードの実態に合わせた（p99 が 99 字、超過は 0.7%）
+target-version = "py313"   # requires-python と揃える
+extend-exclude = [".venv", ".smoke", ".m0data", "notebooks", "log", "data", "download"]
+
+[tool.ruff.lint]
+# 段階導入。まず「壊れている／間違いやすい」を捕まえる規則から入れる。
+# E/W pycodestyle, F pyflakes, I import 順, UP 旧い書き方, B よくある罠
+select = ["E", "F", "W", "I", "UP", "B"]
+
+# **既存コードの確立したスタイルと戦う規則は外す。** 動いていてテストのあるコードを
+# 見た目のためだけに書き換えるのは、退行リスクだけあって利得が無い。
+# 数字は導入時（2026-08-31）の実測。
+ignore = [
+    "E501",   # line-too-long 145 件。p99 は 99 字で、超過は train.py / export/ など既存 SVS に集中
+    "E701",   # if x: return  形式 7 件。このリポジトリの意図的な圧縮スタイル
+    "E702",   # a = 1; b = 2  形式 36 件。同上
+    "E741",   # 変数名 l  8 件。判別器の l = layer など、文脈上は読める
+]
+
+[tool.ruff.lint.per-file-ignores]
+# RMVPE の実装は外部由来（重みは lj1995/VoiceConversionWebUI から取得）。
+# こちらの規約を後から当てても上流と乖離するだけなので、様式の指摘は外す。
+"preprocess/algorithms/rmvpe.py" = ["B007", "B904"]
+# `_pad_extra` は同じ反復の中で定義してすぐ呼ぶ閉包で、次の反復に持ち越さない。
+# B023 が指す危険（ループ変数の遅延束縛）は起きないことを読んで確認した。
+# 既存 SVS の動いているコードを様式のために組み替える利得が無いので除外する。
+"preprocess/phrase_cut.py" = ["B023"]

@@ -17,8 +17,7 @@ import os
 import numpy as np
 import torch
 
-from leapsinger.models.acoustic import (HarmonicAcousticModel,
-                                       HarmonicAcousticModelMultiSpk)
+from leapsinger.models.acoustic import HarmonicAcousticModel, HarmonicAcousticModelMultiSpk
 from leapsinger.models.svc import HarmonicSVCModel
 
 
@@ -206,7 +205,9 @@ def build_item(phonemes, ph_dur_frames, f0_hz, *, spk_id=0, style_id=0,
         if not vuv_dict:
             raise ValueError("vuv_mode='phoneme' needs vuv_dict")
         pos = 0
-        for p, d in zip(phonemes, ph_durs):
+        # 長さは一致する想定（音素 1 つに duration 1 つ）。linter 導入で実行時の挙動を
+        # 変えないよう strict=False のまま明示する。厳格化は別途判断する。
+        for p, d in zip(phonemes, ph_durs, strict=False):
             if p in vuv_dict:
                 voiced[pos:pos + d] = bool(vuv_dict[p])
             pos += d

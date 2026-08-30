@@ -60,6 +60,9 @@ uv run python tools/smoke/run_smoke.py --keep                # 失敗調査用�
 - **`preprocess` の初回は RMVPE の重み 181MB をダウンロードする。** ネットワークが無いなら
   `--skip preprocess svs-pp svs-infer`。
 - `.smoke/` は `.gitignore` 対象。コミットしない。
+- **`ruff check .` は smoke とは別。** lint は「書き方」、smoke は「動くか」を見る。
+  設定は `pyproject.toml` の `[tool.ruff]`。既存コードのスタイルと戦う規則
+  （E501 / E701 / E702 / E741）は**理由つきで外してある**ので、勝手に有効化しないこと。
 - **`--only` で一部だけ走らせるときは、依存する前段も一緒に指定する。** `gen` を飛ばすと
   `svc-train` は「データが無い」で落ちる。これは環境の問題ではない。
 

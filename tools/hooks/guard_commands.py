@@ -89,7 +89,7 @@ def check_train(cmd: str) -> tuple[str, str] | None:
         # 既存 ckpt があると --init_from / --finetune は黙って無視される。
         return (f"{out_root / run} に既に {existing[-1].name} があるため、--init_from は"
                 f"**黙って無視され**、その checkpoint からの自動再開になる",
-                f"別の --run_name にする（fine-tune は base と別ディレクトリに出す）")
+                "別の --run_name にする（fine-tune は base と別ディレクトリに出す）")
     return None
 
 
