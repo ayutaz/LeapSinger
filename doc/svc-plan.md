@@ -74,6 +74,25 @@ M0 --> M1 --> M2 --> M3 --> M4 --> M5 --> M6
 
 dataset ledger（権利・lineage・checksum）、split list、reject list、coverage 集計。
 
+### 進捗（2026-08-30）
+
+**確認済み:** 既存 3 DB の権利条件を一次資料から [データセット台帳](svc-dataset-ledger.md) に記録しました。
+判明した制約: 3 DB とも **DB 自体の再頒布は禁止または記載なし**、商用利用は波音リツのみ無条件で可、
+夏目悠李は**生成音声を機械学習データに使うことを禁止**しており SVC 用途は要確認です。
+
+**確認済み:** ゴール 2〜4 の道具を素材の確定前に実装しました（TDD、30 テスト）。
+
+| 道具 | ゴール | 内容 |
+|---|---|---|
+| `preprocess/svc/audit.py` | 2 | clipping / sample rate / 無音 / DC offset / 短すぎ / 非有限を検査し、実測値つきの除外理由を返す |
+| `preprocess/svc/coverage.py` | 3 | 有声フレームの音域帯ごとの滞在秒数、percentile、半音での音域幅 |
+| `preprocess/svc/split.py` | 4 | 曲・収録セッション単位の split。同じ group が 2 つの split に跨がらない |
+
+**未実装:** 発声スタイル（chest / falsetto / breathy）の coverage は音声から自動で測れません。
+ラベル付けか分類器が要るため、現状は手作業の注釈を前提にします。
+
+**残っているのは素材そのものと、下の要ユーザー判断です。**
+
 ### 前提・依存
 
 なし（起点）。
