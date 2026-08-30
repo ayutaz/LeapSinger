@@ -51,6 +51,10 @@ def main() -> int:
     ap.add_argument("--seconds", type=float, default=0.0, help="この長さだけ（0 なら全部）")
     ap.add_argument("--peak-normalize", action="store_true",
                     help="入力を peak 0.95 へ揃える。**学習と条件が変わるので既定は off**")
+    ap.add_argument("--match-loudness", action="store_true",
+                    help="入力の音量を **学習分布の平均へ寄せる**。配信用に整えられた音源は"
+                         "学習素材よりずっと大きく、そのままだと高域が削れる（実測 -47%、"
+                         "合わせると -22%）。手元録音や配信音源にはこれを付ける")
     ap.add_argument("--self-check", action="store_true",
                     help="入力の GT mel も NHVSing に通し、ボコーダー由来の劣化を分離する")
     ap.add_argument("--device", default="cpu")
@@ -65,6 +69,7 @@ def main() -> int:
     from infer import infer_svc_mel, load_acoustic, load_vocoder, mel_to_wav
     from preprocess.svc.encoders import ContentVecEncoder, RmvpeF0
     from preprocess.svc.extract import _resample, extract_phrase
+    from preprocess.svc.loudness import frame_log_rms, loudness_match_gain
     from preprocess.svc.shard import features_to_item
 
     mel = MelSpec()
@@ -97,6 +102,15 @@ def main() -> int:
     if a.peak_normalize:
         wav = (wav / max(peak, 1e-9) * 0.95).astype(np.float32)
         print("[convert] --peak-normalize: 学習と条件が変わる。比較には使わないこと", flush=True)
+    if a.match_loudness:
+        g = loudness_match_gain(wav, manifest, hop=mel.hop, n_fft=mel.n_fft)
+        before = frame_log_rms(wav, hop=mel.hop, n_fft=mel.n_fft).mean()
+        wav = (wav * g).astype(np.float32)
+        after = frame_log_rms(wav, hop=mel.hop, n_fft=mel.n_fft).mean()
+        sd = float(manifest.get("loudness_std", 1.0)) or 1.0
+        print(f"[convert] --match-loudness: x{g:.3f}  loudness {before:+.3f} -> {after:+.3f} "
+              f"(学習分布から {(before - manifest['loudness_mean']) / sd:+.2f} -> "
+              f"{(after - manifest['loudness_mean']) / sd:+.2f} sigma)", flush=True)
 
     step = int(a.chunk_sec * mel.sr)
     pieces, gt_pieces, t0 = [], [], time.time()

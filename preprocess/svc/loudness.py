@@ -51,6 +51,29 @@ def frame_log_rms(wav: np.ndarray, *, hop: int, n_fft: int,
     return np.log(np.maximum(floor, rms)).astype(np.float32)
 
 
+def loudness_match_gain(wav: np.ndarray, manifest, *, hop: int, n_fft: int,
+                        floor: float = FLOOR) -> float:
+    """入力の loudness を学習分布の平均へ寄せる倍率を返す。
+
+    配信用に整えられた音源は学習素材よりずっと大きく、条件が学習分布の外へ出ます
+    （実測: 自作の YouTube 音源は **+1.40 sigma**、波音リツ DB は peak 0.107）。
+    その状態で変換すると高域が削れます（spectral centroid が上限比 **-47%**。
+    合わせると **-22%** まで戻りました）。
+
+    `frame_log_rms` は自然対数なので、倍率 g をかけると平均が log(g) だけ動きます。
+    したがって `g = exp(学習平均 - 現在の平均)` です。
+
+    **推論時に波形を勝手に加工しないのが原則**なので、これは呼び出し側が明示的に使う
+    ための関数です（`svc_convert.py --match-loudness`）。無音は寄せようがないので 1.0 を返します。
+    """
+    if "loudness_mean" not in manifest:
+        raise ValueError("manifest に loudness_mean がありません。shard の manifest.json を渡してください")
+    current = float(frame_log_rms(wav, hop=hop, n_fft=n_fft, floor=floor).mean())
+    if current <= float(np.log(floor)) + 1e-6:       # 実質すべて無音。寄せる先が無い
+        return 1.0
+    return float(np.exp(float(manifest["loudness_mean"]) - current))
+
+
 def dataset_stats(arrays: Sequence[np.ndarray] | Iterable[np.ndarray]) -> tuple[float, float]:
     """全 phrase を通した (mean, std) を返す。
 

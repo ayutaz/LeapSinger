@@ -964,3 +964,66 @@ class SelectByBudgetTests(unittest.TestCase):
         entries = self._entries([("a", 4, 5.0), ("b", 4, 5.0)])
         picked = select_by_budget(entries, 30.0)
         self.assertEqual(picked, [e for e in entries if e in picked])
+
+
+class LoudnessMatchGainTests(unittest.TestCase):
+    """入力の音量を学習分布へ合わせる係数。
+
+    配信用に整えられた音源は学習素材よりずっと大きく、loudness 条件が学習分布の外に出ます
+    （実測: YouTube から取った自作音源は **+1.40σ**、波音リツ DB は peak 0.107）。
+    その状態で変換すると高域が削れます（spectral centroid が上限比 −47%。合わせると −22%）。
+
+    **推論時に波形を勝手に加工しない**のが原則ですが、これは「学習分布へ合わせる」ための
+    明示的な操作で、無加工が正しい前提そのものを崩さないよう **opt-in** にします。
+    """
+
+    SR, HOP, N_FFT = 44100, 256, 2048
+
+    def _wav(self, amp, n=44100):
+        t = np.arange(n) / self.SR
+        return (amp * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+
+    def _manifest(self, mean, std=1.69):
+        return {"loudness_mean": mean, "loudness_std": std}
+
+    def test_returns_one_when_the_level_already_matches(self):
+        from preprocess.svc.loudness import frame_log_rms, loudness_match_gain
+        w = self._wav(0.1)
+        mean = float(frame_log_rms(w, hop=self.HOP, n_fft=self.N_FFT).mean())
+        g = loudness_match_gain(w, self._manifest(mean), hop=self.HOP, n_fft=self.N_FFT)
+        self.assertAlmostEqual(g, 1.0, places=3)
+
+    def test_scales_a_too_loud_input_down(self):
+        from preprocess.svc.loudness import frame_log_rms, loudness_match_gain
+        quiet, loud = self._wav(0.05), self._wav(0.9)
+        mean = float(frame_log_rms(quiet, hop=self.HOP, n_fft=self.N_FFT).mean())
+        g = loudness_match_gain(loud, self._manifest(mean), hop=self.HOP, n_fft=self.N_FFT)
+        self.assertLess(g, 1.0)
+
+    def test_the_scaled_input_lands_on_the_training_mean(self):
+        # これが本題。合わせたあとの loudness が学習分布の平均へ寄ること。
+        from preprocess.svc.loudness import frame_log_rms, loudness_match_gain
+        target = self._wav(0.08)
+        mean = float(frame_log_rms(target, hop=self.HOP, n_fft=self.N_FFT).mean())
+        loud = self._wav(0.95)
+        g = loudness_match_gain(loud, self._manifest(mean), hop=self.HOP, n_fft=self.N_FFT)
+        got = float(frame_log_rms((loud * g).astype(np.float32),
+                                  hop=self.HOP, n_fft=self.N_FFT).mean())
+        self.assertAlmostEqual(got, mean, places=2)
+
+    def test_is_deterministic(self):
+        from preprocess.svc.loudness import loudness_match_gain
+        w, m = self._wav(0.5), self._manifest(-4.6)
+        self.assertEqual(loudness_match_gain(w, m, hop=self.HOP, n_fft=self.N_FFT),
+                         loudness_match_gain(w, m, hop=self.HOP, n_fft=self.N_FFT))
+
+    def test_survives_digital_silence(self):
+        from preprocess.svc.loudness import loudness_match_gain
+        g = loudness_match_gain(np.zeros(22050, dtype=np.float32), self._manifest(-4.6),
+                                hop=self.HOP, n_fft=self.N_FFT)
+        self.assertTrue(np.isfinite(g) and g > 0)
+
+    def test_rejects_a_manifest_without_the_statistics(self):
+        from preprocess.svc.loudness import loudness_match_gain
+        with self.assertRaises(ValueError):
+            loudness_match_gain(self._wav(0.5), {}, hop=self.HOP, n_fft=self.N_FFT)
