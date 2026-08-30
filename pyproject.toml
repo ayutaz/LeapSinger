@@ -17,6 +17,7 @@ dependencies = [
     "gdown",          # download the example databases (preprocess/download_scripts/)
     "onnxruntime",    # run the bundled NHVSing vocoder ONNX (mel -> waveform)
     "matplotlib",     # training loss/mel figures + the example notebooks
+    "transformers>=5.16.1",
 ]
 
 [project.optional-dependencies]
