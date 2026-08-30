@@ -264,7 +264,60 @@ M4Singer（流通形態が 24 kHz）。**歌手数が多い順に落ちる**の�
 | ACE-Opencpop | [論文](https://arxiv.org/pdf/2401.17619)記載の配布元 |
 | 既存 3 DB | `preprocess/download_scripts/download_{oniku,natsume,ritsu}.py` |
 
-## 7. 記録すべき項目（各素材について）
+## 7. fork 元と同梱ボコーダーが使っているデータセット
+
+**確認済み:** このリポジトリは [wavtechyukky/LeapSinger](https://github.com/wavtechyukky/LeapSinger)
+の fork です（`gh repo view` の `parent` で確認）。同じ作者の関連リポジトリを調べたところ、
+**同梱ボコーダー NHVSing の学習データが、我々と完全に同じ mel 仕様で作られている**ことが
+分かりました。
+
+### NHVSing V3 の学習データ（[README](https://github.com/wavtechyukky/NHVSing)）
+
+**確認済み:** V3 は **44.1 kHz / hop 256 / 128-mel [40–16000 Hz, ln]** で学習されています。
+これは `configs/*.yaml` の `mel` セクションと**完全に一致**します。学習に使われたのは次の 10 件です。
+
+| データセット | 言語 | 入手 | 備考 |
+|---|---|---|---|
+| 東北きりたん | JP | [zunko.jp](https://zunko.jp/kiridev/login.php)（要ログイン） | ©SSS。`realigned-singing-labels` に再アライメント済みラベルあり |
+| 夏目悠李 | JP | 1 節参照 | |
+| 波音リツ Ver2.0-2.2 | JP | 1 節参照 | |
+| 御丹宮くるみ | JP | 1 節参照 | |
+| **No.7** | JP | [voiceseven.com](https://voiceseven.com/)（要ログイン） | 「小岩井ことり歌唱データベース」由来。JST さきがけの成果。デモ曲 50 曲。**非商用は事前申請不要** |
+| Children's Song Dataset | KR/EN | Zenodo | |
+| NUS-48E | EN | Zenodo | 12 歌手 |
+| Opencpop | CN | WeNet | 44.1 kHz |
+| VocalSet | EN | Zenodo | CC BY 4.0 |
+| ccmusic-database acapella | ZH/EN | [HF](https://huggingface.co/datasets/ccmusic-database/acapella) | **CC BY-NC-ND 4.0**（ND = 派生禁止） |
+
+V1/V2 では M4Singer と ACE-Opencpop も使われています。
+**配布重みは学習データの都合で非商用**と明記されています。
+
+### これが素材選定に与える含意（重要）
+
+**仮説:** 本パイプラインは mel を NHVSing に渡して波形にします。**NHVSing が見たことのない
+歌手の mel は out-of-distribution になり得ます。** 逆に、NHVSing の学習に使われたコーパスを
+base に選べば、音響モデルの出力 mel が vocoder にとって in-distribution に保たれます。
+
+これは 6 節の選定（base = GTSinger）と**競合します**。GTSinger は NHVSing の学習に
+使われていません。トレードオフは次のとおりです。
+
+| 選択 | 利点 | 懸念 |
+|---|---|---|
+| **GTSinger 中心** | 80.6 h・20 歌手・48 kHz の実録音。日本語含む 9 言語、技法ラベル | NHVSing にとって未知の音色。vocoder 側の劣化リスク |
+| **NHVSing 学習セット中心** | mel が vocoder に in-distribution。日本語 5 種（きりたん・夏目・リツ・くるみ・No.7） | 個々が小規模。要ログインのものが 2 件。歌手数を稼ぎにくい |
+
+**推奨:** M2（実音声 smoke）の時点で**両方を少量ずつ試し、同じ mel を NHVSing に通して
+比較**します。ここで差が出るなら、それは条件付きトラック (B)「NHVSing target fine-tune」を
+起動する根拠になります（[実行計画](svc-plan.md) 7 節）。**M3 の本格学習の前に決めます。**
+
+### No.7 を候補に加える
+
+**確認済み:** No.7 は日本語の歌唱 DB で、非商用利用は事前申請不要とされています。
+ダウンロードは要ログインで、規約の全文はログイン後にしか確認できませんでした。
+**要ユーザー判断:** 登録して規約を確認し、学習利用の可否を判定してください。
+日本語素材が薄いという 6 節の弱点を埋められる可能性があります。
+
+## 8. 記録すべき項目（各素材について）
 
 [データと計算資源](svc-data-compute.md) 9 節の台帳項目です。素材が決まったら埋めます。
 
@@ -276,7 +329,7 @@ M4Singer（流通形態が 24 kHz）。**歌手数が多い順に落ちる**の�
 - split 作成 seed と split list
 - pitch / loudness / duration の分布
 
-## 8. 現在の状態と次にやること
+## 9. 現在の状態と次にやること
 
 **確認済み（実装済み）:** ゴール 2〜4 の道具は素材の確定前に完成しています。素材が届いたら
 そのまま流せます。
@@ -293,7 +346,7 @@ M4Singer（流通形態が 24 kHz）。**歌手数が多い順に落ちる**の�
 2. **問い合わせを送る**（7 節に文面のたたき台）。回答と日付をこの台帳へ追記します。
 3. 素材を確保して 1〜3 の道具を流し、reject list・coverage・split list を作ります。
 
-## 9. 問い合わせ文面（たたき台）
+## 10. 問い合わせ文面（たたき台）
 
 **要ユーザー判断:** 送るかどうか、文面をどう調整するかは利用者が決めます。以下はそのまま
 使える形にしたものです。**送った日付と回答は 1 節の表へ追記してください。**

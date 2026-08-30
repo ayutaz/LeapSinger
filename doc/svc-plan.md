@@ -68,7 +68,8 @@ M0 --> M1 --> M2 --> M3 --> M4 --> M5 --> M6
 1. target singer と multi-singer corpus について、**学習可否・fine-tune 可否・重み配布可否・生成音声の利用条件**を規約 URL と取得日つきで記録した dataset ledger がある。
 2. 全素材について clipping、伴奏漏れ、強い reverb、sample rate 誤りの検査を通し、除外したものは reject reason つきで残してある。
 3. 音域（low/mid/high の滞在時間）と発声スタイル（chest / falsetto / breathy / 強声 / 弱声）の coverage を集計してある。
-4. train / validation / test を**曲単位・収録セッション単位**で分離した split list があり、seed が記録されている。未知 source singer の test set が別に用意されている。
+4. **base corpus が NHVSing にとって in-distribution かを判断してある。** 同梱ボコーダー NHVSing V3 は 本プロジェクトと同一の mel 仕様（44.1 kHz / hop 256 / 128-mel / 40–16000 Hz ln）で、特定の 10 コーパスで学習されています（[台帳](svc-dataset-ledger.md) 7 節）。そこに含まれない歌手の mel は vocoder にとって未知になり得ます。M2 で両方を少量試して比較し、M3 の本格学習の前に決めます。
+5. train / validation / test を**曲単位・収録セッション単位**で分離した split list があり、seed が記録されている。未知 source singer の test set が別に用意されている。**性別で層化する**（実データで偏りを確認済み）。
 
 ### 成果物
 
