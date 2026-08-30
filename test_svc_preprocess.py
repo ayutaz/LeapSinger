@@ -749,7 +749,218 @@ class SongNameTests(unittest.TestCase):
         self.assertNotEqual(a, b)
 
     def test_strips_characters_that_are_unsafe_in_an_npz_key(self):
-        # shard の key は `<name>|content`。名前に区切り文字や空白が混ざると key が壊れる。
-        # ここでは Windows でも作れる文字だけを使う（`|` はパスに使えない）。
+        # shard の key は `<name>|content`。区切り文字・空白・記号は落とす。
+        # **CJK は落とさない。** ASCII だけに削ると日本語題の曲がすべて同じ名前に潰れ、
+        # 曲単位 split が効かなくなる（実測: GTSinger 1,922 ファイル中 1,723 件が 1 名に潰れた）。
         name = self._name("さよならの夏 (歌集バージョン)/vocal.wav")
-        self.assertRegex(name, r"^[0-9A-Za-z_-]+$")
+        self.assertNotRegex(name, r"[|/\\\s()~]")
+        self.assertIn("さよならの夏", name)
+
+    def test_titles_that_differ_only_in_cjk_stay_distinct(self):
+        self.assertNotEqual(self._name("心做し/vocal.wav"), self._name("愛してる/vocal.wav"))
+
+    def test_an_ascii_title_is_unchanged_by_the_cjk_support(self):
+        # 既存の Ritsu の名前を変えないこと（`+` は落ちる、が従来どおり）。
+        self.assertEqual(self._name("1st_color+3_normal/x.wav"), "1st_color_3_normal")
+
+
+class PhraseNameCollisionTests(unittest.TestCase):
+    """入れ子のコーパスで phrase 名が衝突しないこと（M1 ゴール 3 の続き）。
+
+    GTSinger は `<言語>/<歌手>/<技法>/<曲>/<Group>/0000.wav` という深い構造で、
+    ファイル名は曲をまたいで `0000.wav` から振り直されます。`song_name()` が親ディレクトリ
+    （`Control_Group`）を返し、連番がファイルごとに 0 へ戻る実装だと、**別の曲の phrase が
+    同じ名前になって cache を黙って上書き**します（実測: 40 ファイルが 3 名に潰れた）。
+
+    上書きは例外にもならず、shard のフレーズ数が減るだけなので気づけません。
+    名前の一意性を契約としてテストします。
+    """
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="collide_"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+
+    def _touch(self, rel: str) -> Path:
+        p = self.root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.touch()
+        return p
+
+    def test_song_name_can_select_path_components(self):
+        # GTSinger の 1 歌手ぶんを root にすると、相対パスは <技法>/<曲>/<Group>/x.wav。
+        # 曲は 1 番目の要素。技法と Group をまたいで**同じ曲は同じ song 名**にする
+        # （別々にすると同じ曲が train と eval に分かれて leakage する）。
+        from preprocess.svc.run import song_name
+        a = self._touch("Breathy/kokoronashi/Breathy_Group/0000.wav")
+        b = self._touch("Vibrato/kokoronashi/Control_Group/0003.wav")
+        self.assertEqual(song_name(a, self.root, parts=(1,)),
+                         song_name(b, self.root, parts=(1,)))
+        self.assertEqual(song_name(a, self.root, parts=(1,)), "kokoronashi")
+
+    def test_song_name_can_join_several_components(self):
+        from preprocess.svc.run import song_name
+        p = self._touch("Breathy/kokoronashi/Breathy_Group/0000.wav")
+        # 表記ゆれを畳むため casefold される（SongNameNormalisationTests 参照）。
+        self.assertEqual(song_name(p, self.root, parts=(0, 1)), "breathy_kokoronashi")
+
+    def test_song_name_without_parts_keeps_the_old_behaviour(self):
+        # 既存の Ritsu 配置（<曲>/<曲>.wav）を壊さない。
+        from preprocess.svc.run import song_name
+        p = self._touch("1st_color/1st_color.wav")
+        self.assertEqual(song_name(p, self.root), "1st_color")
+
+    def test_the_phrase_counter_continues_across_files_of_the_same_song(self):
+        # ここが上書きの原因。ファイルごとに 0 へ戻すと 2 つ目のファイルが 1 つ目を潰す。
+        from preprocess.svc.run import phrase_name
+        counters: dict[str, int] = {}
+        first = [phrase_name(counters, "kokoronashi") for _ in range(3)]
+        second = [phrase_name(counters, "kokoronashi") for _ in range(2)]
+        self.assertEqual(first, ["kokoronashi_0000", "kokoronashi_0001", "kokoronashi_0002"])
+        self.assertEqual(second, ["kokoronashi_0003", "kokoronashi_0004"])
+
+    def test_different_songs_count_independently(self):
+        from preprocess.svc.run import phrase_name
+        counters: dict[str, int] = {}
+        self.assertEqual(phrase_name(counters, "a"), "a_0000")
+        self.assertEqual(phrase_name(counters, "b"), "b_0000")
+        self.assertEqual(phrase_name(counters, "a"), "a_0001")
+
+    def test_the_generated_names_still_round_trip_through_song_of(self):
+        from dataset import _song_of
+        from preprocess.svc.run import phrase_name, song_name
+        counters: dict[str, int] = {}
+        p = self._touch("Breathy/kokoronashi/Breathy_Group/0000.wav")
+        song = song_name(p, self.root, parts=(1,))
+        self.assertEqual(_song_of(phrase_name(counters, song)), song)
+
+    def test_a_whole_nested_tree_produces_unique_names(self):
+        # 実データと同じ形。40 ファイルが 3 名に潰れていた退行を止める。
+        from preprocess.svc.run import phrase_name, song_name
+        paths = [self._touch(f"{tech}/{song}/{tech}_Group/{i:04d}.wav")
+                 for tech in ("Breathy", "Vibrato")
+                 for song in ("songA", "songB")
+                 for i in range(5)]
+        counters: dict[str, int] = {}
+        names = [phrase_name(counters, song_name(p, self.root, parts=(1,))) for p in paths]
+        self.assertEqual(len(set(names)), len(paths), "phrase 名が衝突している")
+
+
+class NonAsciiPhraseNameTests(unittest.TestCase):
+    """日本語の曲名を持つ phrase が shard を往復できること。
+
+    曲名を ASCII に削ると日本語題の曲が 1 つの名前に潰れ、曲単位 split が効きません。
+    そこで CJK を残すことにしたので、**npz の key と loader がそれを扱えること**を契約にします。
+    """
+
+    SR, HOP, N_MELS = 44100, 256, 128
+    C_IN, N_DIMS = 32, 8
+    FR = SR / HOP
+
+    def setUp(self):
+        self.out = Path(tempfile.mkdtemp(prefix="cjk_"))
+        self.addCleanup(shutil.rmtree, self.out, ignore_errors=True)
+
+    def _phrase(self, t_mel, seed=0):
+        r = np.random.default_rng(seed)
+        t_ssl = max(1, round(t_mel * 50.0 / self.FR))
+        return {
+            "content": r.standard_normal((t_ssl, self.C_IN)).astype(np.float32),
+            "f0_hz": (220.0 + 10 * r.standard_normal(t_mel)).astype(np.float32),
+            "uv": (r.random(t_mel) > 0.3).astype(np.float32),
+            "loudness": (-3.0 + r.standard_normal(t_mel)).astype(np.float32),
+            "mel": r.standard_normal((self.N_MELS, t_mel)).astype(np.float32) - 5.0,
+        }
+
+    def test_a_japanese_song_name_survives_the_shard_and_the_loader(self):
+        from svc_dataset import SVCFeatureDataset
+        phrases = {"さよならの夏_0000": self._phrase(206, 0),
+                   "さよならの夏_0001": self._phrase(258, 1),
+                   "心做し_0000": self._phrase(310, 2)}
+        build_shard(phrases, self.out, n_dims=self.N_DIMS, subset_seed=0, frame_rate=self.FR)
+        z = np.load(self.out / "svc_shard.npz")
+        self.assertIn("さよならの夏_0000|content", z.files)
+        ds = SVCFeatureDataset([str(self.out)], split="train", eval_songs=0)
+        self.assertEqual(len(ds), 3)
+        self.assertEqual(ds[0]["content"].shape[1], self.N_DIMS)
+
+    def test_the_split_still_groups_by_song(self):
+        # 日本語題でも `_song_of()` が曲名を取り出せること。ここが崩れると leakage する。
+        from dataset import _song_of
+        self.assertEqual(_song_of("さよならの夏_0012"), "さよならの夏")
+
+
+class SongNameNormalisationTests(unittest.TestCase):
+    """曲名の表記ゆれを畳む。
+
+    GTSinger の JA-Tenor-1 には `Heartful_Song` と `Heartful_song` が同居しています
+    （実測）。別の曲として扱うと、同じ曲が train と eval に分かれて leakage します。
+    M0 でも「曲名を正規化しないと leakage する」ことを実データで確認しています。
+    """
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="songnorm_"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+
+    def _name(self, rel: str, parts=None) -> str:
+        from preprocess.svc.run import song_name
+        p = self.root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.touch()
+        return song_name(p, self.root, parts)
+
+    def test_case_variants_of_the_same_title_collapse(self):
+        self.assertEqual(self._name("Breathy/Heartful_Song/G/0000.wav", (1,)),
+                         self._name("Vibrato/Heartful_song/G/0000.wav", (1,)))
+
+    def test_cjk_titles_are_unaffected(self):
+        self.assertEqual(self._name("心做し/x.wav"), "心做し")
+
+
+class SelectByBudgetTests(unittest.TestCase):
+    """歌手ごとに使う分量を揃えて選ぶ（M3 の base 事前学習）。
+
+    base 事前学習で効くのは総時間より**話者の多様性**です。GTSinger 全 9 言語 80.59 h を
+    そのまま抽出すると 12 時間以上かかるので、1 歌手あたりの上限を決めて、
+    **曲をまたいでラウンドロビン**で選びます。先頭から順に取ると、技法や曲が
+    アルファベット順に偏ります。
+    """
+
+    def _entries(self, spec):
+        return [(song, f"{song}/{i:04d}.wav", sec)
+                for song, n, sec in spec for i in range(n)]
+
+    def test_stays_within_the_budget(self):
+        from preprocess.svc.run import select_by_budget
+        entries = self._entries([("a", 10, 10.0), ("b", 10, 10.0)])
+        picked = select_by_budget(entries, 50.0)
+        self.assertLessEqual(sum(e[2] for e in picked), 50.0)
+        self.assertGreater(len(picked), 0)
+
+    def test_spreads_across_songs_instead_of_taking_the_first_ones(self):
+        from preprocess.svc.run import select_by_budget
+        entries = self._entries([("a", 10, 10.0), ("b", 10, 10.0), ("c", 10, 10.0)])
+        songs = {e[0] for e in select_by_budget(entries, 60.0)}
+        self.assertEqual(songs, {"a", "b", "c"}, "曲が偏っている")
+
+    def test_returns_everything_when_the_budget_is_not_set(self):
+        from preprocess.svc.run import select_by_budget
+        entries = self._entries([("a", 3, 10.0)])
+        self.assertEqual(select_by_budget(entries, 0), entries)
+        self.assertEqual(select_by_budget(entries, None), entries)
+
+    def test_returns_everything_when_the_budget_exceeds_the_material(self):
+        from preprocess.svc.run import select_by_budget
+        entries = self._entries([("a", 3, 10.0), ("b", 2, 10.0)])
+        self.assertEqual(len(select_by_budget(entries, 10_000.0)), 5)
+
+    def test_is_deterministic(self):
+        from preprocess.svc.run import select_by_budget
+        entries = self._entries([("a", 7, 3.0), ("b", 5, 4.0), ("c", 9, 2.0)])
+        self.assertEqual(select_by_budget(entries, 40.0), select_by_budget(entries, 40.0))
+
+    def test_keeps_the_original_order_of_the_selection(self):
+        # cache のファイル名は採番順に決まる。並びが安定しないと bit 一致しない。
+        from preprocess.svc.run import select_by_budget
+        entries = self._entries([("a", 4, 5.0), ("b", 4, 5.0)])
+        picked = select_by_budget(entries, 30.0)
+        self.assertEqual(picked, [e for e in entries if e in picked])

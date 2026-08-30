@@ -247,3 +247,47 @@ class LoaderKwargsTests(unittest.TestCase):
         self.assertNotIn("persistent_workers", _loader_kwargs("cpu", 0))
         self.assertTrue(_loader_kwargs("cpu", 2)["persistent_workers"])
         self.assertEqual(_loader_kwargs("cpu", 2)["prefetch_factor"], 4)
+
+
+class PerfSnapshotTests(unittest.TestCase):
+    """学習の実測値（実行計画 M3 ゴール 4）。
+
+    「最初の 100 / 1,000 update で examples/sec、frames/sec、peak VRAM、checkpoint size、
+    validation time を実測し、見積もりを実測値へ更新してある」ことがゴールです。
+    tqdm の step/s は画面に出るだけで記録に残らないので、値として出せるようにします。
+    vast.ai は時間課金なので、この数字はそのまま料金の見積もりになります。
+    """
+
+    def test_computes_rates_from_the_counters(self):
+        from train import perf_snapshot
+        s = perf_snapshot(step=100, seconds=50.0, examples=800, frames=3_000_000)
+        self.assertAlmostEqual(s["steps_per_sec"], 2.0)
+        self.assertAlmostEqual(s["examples_per_sec"], 16.0)
+        self.assertAlmostEqual(s["frames_per_sec"], 60_000.0)
+        self.assertEqual(s["step"], 100)
+
+    def test_survives_a_zero_elapsed_time(self):
+        # 最初の 1 step で呼ばれるとゼロ除算になり得る。落とさない。
+        from train import perf_snapshot
+        s = perf_snapshot(step=1, seconds=0.0, examples=8, frames=30_000)
+        self.assertTrue(all(np.isfinite(v) for k, v in s.items()
+                            if isinstance(v, float)))
+
+    def test_reports_peak_vram_when_a_value_is_given(self):
+        from train import perf_snapshot
+        s = perf_snapshot(step=100, seconds=10.0, examples=100, frames=10,
+                          peak_vram_bytes=2 * 1024 ** 3)
+        self.assertAlmostEqual(s["peak_vram_gb"], 2.0)
+
+    def test_omits_peak_vram_on_cpu(self):
+        from train import perf_snapshot
+        self.assertNotIn("peak_vram_gb", perf_snapshot(step=1, seconds=1.0,
+                                                       examples=1, frames=1))
+
+    def test_formats_a_single_readable_line(self):
+        from train import perf_line, perf_snapshot
+        line = perf_line(perf_snapshot(step=100, seconds=50.0, examples=800,
+                                       frames=3_000_000, peak_vram_bytes=1024 ** 3))
+        self.assertIn("step 100", line)
+        self.assertIn("2.00 step/s", line)
+        self.assertIn("1.00 GB", line)

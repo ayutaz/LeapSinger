@@ -205,6 +205,30 @@ def _rand_window(tensors, win: int):
     return [x[..., s:s + win] for x in tensors]
 
 
+def perf_snapshot(*, step: int, seconds: float, examples: int, frames: int,
+                  peak_vram_bytes: int | None = None) -> dict:
+    """学習の実測スループット（実行計画 M3 ゴール 4）。
+
+    tqdm の step/s は画面に出るだけで記録に残りません。vast.ai は時間課金なので、
+    この数字はそのまま所要時間と料金の見積もりになります。
+    """
+    dt = max(float(seconds), 1e-9)
+    out = {"step": int(step), "elapsed_sec": round(float(seconds), 2),
+           "steps_per_sec": step / dt, "examples_per_sec": examples / dt,
+           "frames_per_sec": frames / dt}
+    if peak_vram_bytes:
+        out["peak_vram_gb"] = float(peak_vram_bytes) / 1024 ** 3
+    return out
+
+
+def perf_line(s: dict) -> str:
+    line = (f"[perf] step {s['step']}  {s['steps_per_sec']:.2f} step/s  "
+            f"{s['examples_per_sec']:.1f} ex/s  {s['frames_per_sec']:.0f} frames/s")
+    if "peak_vram_gb" in s:
+        line += f"  peak {s['peak_vram_gb']:.2f} GB"
+    return line
+
+
 def _loader_kwargs(device, num_workers: int) -> dict:
     """DataLoader の追加引数。**pin_memory は CUDA のときだけ有効にする。**
 
@@ -462,9 +486,17 @@ def main():
     model.train()
     pbar = tqdm(total=max_updates, initial=step, desc=args.run_name, unit="step", dynamic_ncols=True)
     _done = False
+    # 実測スループット（実行計画 M3 ゴール 4）。checkpoint から再開したときは step を
+    # 数え直すので、`_perf_at` は「この起動での経過 step」で判定する。
+    _perf_t0, _perf_step0, _perf_ex, _perf_fr = time.time(), step, 0, 0
+    _perf_at = [100, 1000, 10000]
+    if torch.cuda.is_available() and device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats()
     while step < max_updates:
         for b in loader:
             b = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in b.items()}
+            _perf_ex += int(b["target_mel"].shape[0])
+            _perf_fr += int(b["target_mel"].shape[0] * b["target_mel"].shape[2])
             losses = _forward_flow_gan(model, b, tr.get("flow_loss", cfg["model"].get("flow_loss", "l2")))
             g_total = losses["flow"]
             d_loss = None; d_logits = {}; g_adv = g_fm = None; fm_w = 0.0; w_ad = 1.0
@@ -525,6 +557,18 @@ def main():
                     writer.add_scalar("train/fm", g_fm.item(), step)
                     writer.add_scalar("train/fm_w", fm_w, step)
                     writer.add_scalar("train/adaptive_w", float(w_ad), step)
+            if (step - _perf_step0) in _perf_at:
+                _snap = perf_snapshot(
+                    step=step - _perf_step0, seconds=time.time() - _perf_t0,
+                    examples=_perf_ex, frames=_perf_fr,
+                    peak_vram_bytes=(torch.cuda.max_memory_allocated()
+                                     if device.type == "cuda" else None))
+                tqdm.write(perf_line(_snap))
+                for k in ("steps_per_sec", "examples_per_sec", "frames_per_sec"):
+                    writer.add_scalar(f"perf/{k}", _snap[k], step)
+                if "peak_vram_gb" in _snap:
+                    writer.add_scalar("perf/peak_vram_gb", _snap["peak_vram_gb"], step)
+                (out_dir / "perf.json").write_text(json.dumps(_snap, indent=1), encoding="utf-8")
             if step % eval_interval == 0:
                 log_eval(step)
             if step % save_interval == 0:

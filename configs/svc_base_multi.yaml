@@ -1,0 +1,71 @@
+# M3: multi-singer base pretraining（doc/svc-plan.md M3）。
+#
+# 目的は「話者に依存しない変換器の土台」を作ることで、target singer の再現ではありません。
+# target 単独で学習すると SSL content に残った話者性を使う近道を学び、未知の source singer で
+# 崩れます。複数歌手の自己再構成を speaker 条件つきで学習して content / pitch / loudness と
+# 話者性を分離します。
+#
+# `data.spk_map` と `model.n_speakers` は素材で決まるので、ここには書きません。
+# `tools/m3_corpus.py --write-config` が実際に作った shard から埋めた config を書き出します。
+# **その生成物が実験記録**です（この recipe ではなく）。
+#
+#   uv run python tools/m3_corpus.py --out data --write-config log/m3_base/config.yaml
+#   uv run python -m train --config log/m3_base/config.yaml --data_dirs data/* \
+#     --run_name m3_base --out_root log --device cuda
+#
+# GAN は入れません（plan の決定）。flow + 再構成が成立し artifact を分類できてから、
+# 別 run で導入します（条件付きトラック C）。
+mel:
+  sr: 44100
+  hop: 256
+  n_fft: 2048
+  win: 2048
+  n_mels: 128
+  fmin: 40.0
+  fmax: 16000.0
+model:
+  arch: svc
+  content_dim: 256          # ContentVec 768 から固定ランダムに選んだ部分集合（seed 0）
+  content_layers: 2
+  content_dropout: 0.1
+  hidden: 256
+  backbone_ch: 256
+  n_cycles: 3
+  dilation_schedule: pow2_15
+  # n_speakers は spk_map から決まる。--write-config が埋める
+  spk_dim: 32               # 低次元の話者ベクトル -> spk_proj -> cond に加算
+  n_styles: 0
+  use_uv: true
+  flow_loss: l2
+  mel_vmin: -11.5
+  mel_vmax: 2.0
+excitation:
+  n_harm: 256
+  noise_ratio: 0.05
+  exc_scale: 0.15
+  harm_decay: 1.0
+train:
+  lr: 8.0e-4
+  grad_clip: 1.0
+  optimizer: radam
+  max_updates: 60000
+  max_batch_frames: 30000
+  max_batch_size: 16
+  recon_weight: 0.5
+  flow_loss: l2
+  num_steps: 1
+  save_interval: 5000
+  log_interval: 50
+  eval_interval: 2000
+  eval_items: 3
+  vocoder: checkpoints/nhv_v3.onnx
+  num_workers: 4
+  pitch_aug: false          # SVC では使えない。train.py が SystemExit する
+  balance_speakers: true    # 長時間の話者が batch を支配しないようにする（M3 ゴール 1）
+gan:
+  enabled: false
+  d_type: mel2d
+  cond: speaker
+data:
+  eval_songs: 2             # 話者ごとに曲単位で hold-out（_song_of による）
+  min_sec: 0.3
