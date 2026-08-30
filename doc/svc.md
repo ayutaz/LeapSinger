@@ -60,12 +60,25 @@
 
 ## 未決事項
 
-- SSL 特徴を mel grid（172.265625 Hz）へ合わせる補間方法（SSL は 50 Hz で整数比にならない）。
-- 256 次元の部分集合の選び方（seed を 1 つ固定するか複数比較するか）。
-- target singer と multi-singer corpus の権利条件を満たせるか。
 - speaker embedding を fine-tune 後も残すか、target 固定モデルへ焼き込むか。
 - offline teacher の合格閾値と、許容する streaming lookahead / 往復遅延。
-- NHVSing の既存重みをそのまま使うか、target singer へ追加学習するか。
+- NHVSing の既存重みをそのまま使うか、target singer へ追加学習するか（M2 で in-distribution かを確かめてから判断）。
+- `content-vec-best` の layer 12 と final projection 出力の対応（実装時に shape で確認）。
+
+**決着済み（2026-08-30）:** 補間方法は **left（直前保持）**、256 次元の部分集合は **seed 0 を既定**、
+用途は**研究・個人利用のみ**、素材は **target = 波音リツ / base = GTSinger + 日本語 3 DB /
+未知 source test = VocalSet** に確定しました（[content encoder の選定](svc-content-encoder.md)、
+[データセット台帳](svc-dataset-ledger.md)）。
+
+## マイルストーンの進捗
+
+[実行計画](svc-plan.md) の M0〜M6 に対する現在地です。
+
+| | 状態 |
+|---|---|
+| **M0 データ確定** | **入手可能な素材について完了**。5 コーパスを取得して検査・coverage・split を実データで実行。台帳に権利・lineage・checksum・確定した割り当てを記録。東北きりたん / No.7 はログイン必須で未取得 |
+| **M1 特徴抽出前処理** | **着手中**。`align` / `subset` / `loudness` を TDD で実装済み（32 テスト）。残りは `build_shard` と ContentVec / RMVPE の呼び出し層 |
+| M2〜M6 | 未着手 |
 
 ## 完了レベル
 

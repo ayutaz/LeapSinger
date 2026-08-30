@@ -15,6 +15,21 @@
 | [`infer.py`](../infer.py) | SVC 推論を追加済み | 単一 item の mel inference |
 | [`configs/svc_base.yaml`](../configs/svc_base.yaml) | 追加済み | offline single-target 初期設定 |
 | [`test_svc_model.py`](../test_svc_model.py) | 追加済み | SVC model / dataset / wiring の targeted tests |
+| [`preprocess/svc/align.py`](../preprocess/svc/align.py) | 実装済み | SSL 50 Hz → mel grid の **left（直前保持）**整列 |
+| [`preprocess/svc/subset.py`](../preprocess/svc/subset.py) | 実装済み | ContentVec 768 → 256 次元の部分集合（seed と index を manifest へ） |
+| [`preprocess/svc/loudness.py`](../preprocess/svc/loudness.py) | 実装済み | フレーム log-RMS（mel とフレーム数一致）と dataset 統計での正規化 |
+| [`preprocess/svc/audit.py`](../preprocess/svc/audit.py) | 実装済み | M0: clipping / sr / 無音 / DC / 帯域の検査と reject reason |
+| [`preprocess/svc/coverage.py`](../preprocess/svc/coverage.py) | 実装済み | M0: 音域帯の滞在時間、percentile、ラベル別滞在時間 |
+| [`preprocess/svc/split.py`](../preprocess/svc/split.py) | 実装済み | M0: group 単位 split（層化対応） |
+| [`preprocess/svc/report.py`](../preprocess/svc/report.py) | 実装済み | M0: 検査 → coverage → split を 1 度に出す |
+| [`test_svc_preprocess.py`](../test_svc_preprocess.py) | 追加済み | align / subset / loudness の契約テスト（32 件） |
+| [`test_svc_dataset.py`](../test_svc_dataset.py) | 追加済み | audit / coverage / split / report の契約テスト（58 件） |
+| [`tools/smoke/`](../tools/smoke/) | 追加済み | 全経路の疎通を 1 コマンドで回す（11 ステージ） |
+| [`tools/hooks/`](../tools/hooks/) | 追加済み | 常に誤りのコマンドを実行前に止める guard と回帰テスト |
+| [`tools/vast.py`](../tools/vast.py) / [`tools/vast_bootstrap.sh`](../tools/vast_bootstrap.sh) | 追加済み | vast.ai インスタンスの操作と初期化 |
+| `.claude/skills/` | 追加済み | 疎通確認 / 学習実験 / 文書更新 / TDD / vast.ai の手順 |
+| [`doc/svc-content-encoder.md`](svc-content-encoder.md) | 追加済み | content encoder の候補比較と決定 |
+| [`doc/svc-dataset-ledger.md`](svc-dataset-ledger.md) | 追加済み | M0 の台帳（権利・実測・確定した割り当て） |
 | [`doc/svc-plan.md`](svc-plan.md) | 追加済み | M0〜M6 の実行計画（目的・ゴール・完了条件） |
 | [`CLAUDE.md`](../CLAUDE.md) | 追加済み | コマンド、共有スタック、SVC データ契約、既知の落とし穴 |
 | [`pyproject.toml`](../pyproject.toml) / [`uv.lock`](../uv.lock) / `.python-version` | 更新済み | Python 3.13 固定と CUDA 版 torch の解決を lock |
@@ -120,7 +135,8 @@ Python 3.13 / torch 2.13 / librosa 1.0 へ更新した後、次を上記環境�
 
 ### 確認済み
 
-- SVC targeted unit tests 10 件が成功（上記環境の実 GPU マシン上）。
+- 自動テスト **100 件**が成功（`test_svc_model` 10 / `test_svc_preprocess` 32 / `test_svc_dataset` 58）。
+- **実音声 5 コーパスへの検査・coverage・split**（M0。下記「M0 の実データ検証」）。
 - padding された frame が有効 frame に影響しないこと。
 - feature width / frame alignment の不正入力を拒否すること。
 - speaker-conditioned encoding の shape と分岐。
@@ -133,9 +149,30 @@ Python 3.13 / torch 2.13 / librosa 1.0 へ更新した後、次を上記環境�
 - synthetic tensor による train/flow wiring smoke。
 - その時点の `git diff --check`。
 
+### M0 の実データ検証（2026-08-30）
+
+入手できた 5 コーパスすべてに検査・coverage・split を通しました。詳細と数値は
+[データセット台帳](svc-dataset-ledger.md) 4 節・4b 節です。
+
+| コーパス | ファイル | 時間 | sample rate | 除外 |
+|---|---:|---:|---|---:|
+| 波音リツ（3 音源） | 150 / 75 曲 | 10.41 h | 44,100 | 0 |
+| GTSinger 日本語 | 2,433 / 34 曲 | 6.79 h | 48,000 | 1 |
+| VocalSet | 3,613 | 8.73 h | 44,100 | 40 |
+| 御丹宮くるみ | 56 | 1.42 h | 96,000 | 3 |
+| 夏目悠李 | 52 | 1.20 h | 48,000 | 6 |
+
+**この過程で 10 件の欠陥・訂正が出ました**（split の性別偏り、歌手 ID の取り違えによる leakage、
+技法ラベルの表記ゆれ、帯域閾値の誤り、FFT の性能、曲名正規化しないことによる leakage、
+無音閾値が曲全体に合わないこと、音域に関する推測の誤りなど）。**いずれも合成データでは
+出ませんでした。**
+
 ### 制限付き
 
-`uv run python -m unittest discover` は上記環境で成功します（過去に記録した「借用環境に `librosa` がなく collection が停止する」問題は、uv 管理環境の導入で解消しました）。ただし top-level の `test_*.py` は `test_svc_model.py` の 1 本だけで、収集される 10 件は targeted tests と同一です。したがって **discover が通ることは repository 全体の振る舞いが検証済みであることを意味しません。** preprocess / export / 既存 SVS 経路には自動テストがありません。
+`uv run python -m unittest discover` は上記環境で成功します。ただし top-level の `test_*.py` は
+`test_svc_model.py` / `test_svc_preprocess.py` / `test_svc_dataset.py` の 3 本で、
+**preprocess / export / 既存 SVS 経路そのものには自動テストがありません**（`tools/smoke/run_smoke.py`
+が疎通を確認するだけです）。
 
 ### 未検証
 

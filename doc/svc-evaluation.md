@@ -97,6 +97,7 @@ target singer の train 曲、同一 take、近重複 clip は test から除外
 | dynamics | 強弱消失、breath 過多、loudness pumping |
 | vocoder | buzz、metallic、high-frequency noise、クリック |
 | timing | onset 遅延、子音の先頭欠落、phrase 末尾切れ |
+| **音域外** | **source が C3（約 131 Hz）より低いときの崩れ。** 手元の素材はこの帯域が最大でも 3.6% しかなく（[データセット台帳](svc-dataset-ledger.md) 4b 節）、低い男声 source は学習分布の外側への外挿になる。**必ず観察項目に入れる** |
 | streaming | chunk boundary、state reset、buffer under/overrun |
 | data | accompaniment leakage、reverb imprint、duplicate leakage |
 

@@ -182,10 +182,13 @@ drives the existing harmonic excitation and rectified flow from precomputed cont
 features, F0, V/UV, and loudness. The existing phoneme + duration synthesis path remains
 unchanged.
 
-The model, feature-shard contract, and training/evaluation wiring are implemented. The
-ContentVec/HuBERT + RMVPE preprocessing command and the real-time student are not yet
-implemented. The Japanese research suite covering requirements, architecture, data/GPU,
-training, evaluation, prior art/licensing, implementation status, and sources is indexed at
+The model, feature-shard contract, training/evaluation wiring, and the dataset
+audit/coverage/split tooling are implemented. The content encoder is **ContentVec**
+(768-dim layer 12; training uses a fixed random 256-dim subset), F0 is **RMVPE**, and SSL
+frames are aligned to the mel grid by **left (hold-previous)**. **The extractor that runs
+ContentVec to build the feature shard, and the real-time student, are not yet implemented.**
+The Japanese research suite covering requirements, architecture, data/GPU, training,
+evaluation, prior art/licensing, implementation status, and sources is indexed at
 [doc/svc.md](doc/svc.md).
 
 - **Multilingual support** — so far we validate with Japanese data, but the design itself is language-independent. We plan to support other languages with their own phoneme dictionaries and data, aiming for a single model that can handle multiple languages.

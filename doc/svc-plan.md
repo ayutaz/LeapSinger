@@ -28,7 +28,9 @@
 | 済 | 再現可能な開発環境（Python 3.13 固定、`uv.lock`、CUDA 版 torch の実機疎通確認） |
 | 済 | 全経路の疎通確認を 1 コマンド化（`tools/smoke/run_smoke.py` 11 ステージ）、誤コマンドを実行前に止める hook、作業手順の skill 化 |
 | 済 | 学習環境の決定（vast.ai の Linux GPU）と、その操作系（`tools/vast.py` / `tools/vast_bootstrap.sh`） |
-| 済 | content encoder・F0 extractor・loudness 正規化の決定（[content encoder の選定](svc-content-encoder.md)） |
+| 済 | content encoder・F0 extractor・loudness 正規化・補間方法・部分集合 seed の決定（[content encoder の選定](svc-content-encoder.md)） |
+| 済 | **M0 完了**（入手可能な素材について）。5 コーパスの取得・検査・coverage・split と台帳（[データセット台帳](svc-dataset-ledger.md)） |
+| 済 | M1 の一部。`align` / `subset` / `loudness` を TDD で実装（32 テスト） |
 | 未 | 実音声を 1 度も通していない。WAV も 1 本も出していない |
 
 **決定:** 実音声を通していない段階では、品質・速度に関する対外的な主張を行いません。
@@ -75,24 +77,37 @@ M0 --> M1 --> M2 --> M3 --> M4 --> M5 --> M6
 
 dataset ledger（権利・lineage・checksum）、split list、reject list、coverage 集計。
 
-### 進捗（2026-08-30）
+### 進捗（2026-08-30）: 入手可能な素材について完了
 
-**確認済み:** 既存 3 DB の権利条件を一次資料から [データセット台帳](svc-dataset-ledger.md) に記録しました。
-判明した制約: 3 DB とも **DB 自体の再頒布は禁止または記載なし**、商用利用は波音リツのみ無条件で可、
-夏目悠李は**生成音声を機械学習データに使うことを禁止**しており SVC 用途は要確認です。
+**確認済み: 4 つのゴールすべてを実データで実行しました。** 詳細と数値は
+[データセット台帳](svc-dataset-ledger.md) です。
 
-**確認済み:** ゴール 2〜4 の道具を素材の確定前に実装しました（TDD、30 テスト）。
+| ゴール | 実施内容 |
+|---|---|
+| 1. dataset ledger | 既存 3 DB の権利条件を一次資料から記録。公開コーパス 14 件のライセンス調査。fork 元と同梱 NHVSing の学習データ。取得物の SHA-256。**素材の割り当てを確定** |
+| 2. reject list | 5 コーパス全件に検査。理由つきで記録 |
+| 3. coverage | RMVPE で実 F0 を抽出して音域帯の滞在時間。GTSinger は注釈から**音素単位**の技法 coverage |
+| 4. split list | 曲・歌手単位。**性別で層化**、**曲名を正規化**して leakage を排除 |
 
-| 道具 | ゴール | 内容 |
+**確定した割り当て:**
+
+| 役割 | 素材 | 実測 |
 |---|---|---|
-| `preprocess/svc/audit.py` | 2 | clipping / sample rate / 無音 / DC offset / 短すぎ / 非有限を検査し、実測値つきの除外理由を返す |
-| `preprocess/svc/coverage.py` | 3 | 有声フレームの音域帯ごとの滞在秒数、percentile、半音での音域幅 |
-| `preprocess/svc/split.py` | 4 | 曲・収録セッション単位の split。同じ group が 2 つの split に跨がらない |
+| target singer | **波音リツ 3 音源** | 10.41 h / 75 曲 / 除外 0 |
+| multi-singer base | **GTSinger 全 9 言語 + 日本語 3 DB** | GTSinger 80.59 h（日本語分 6.79 h 検証済み） |
+| 未知 source の test | **VocalSet** | 8.73 h / 20 歌手 |
 
-**未実装:** 発声スタイル（chest / falsetto / breathy）の coverage は音声から自動で測れません。
-ラベル付けか分類器が要るため、現状は手作業の注釈を前提にします。
+**この過程で 10 件の欠陥・訂正が出ました。いずれも合成データでは出ないものです。**
+代表例: 歌手 ID の取り違えと曲名正規化の欠如による **leakage の実検出**、
+split の性別偏り、帯域閾値 16 kHz が実歌唱に対して厳しすぎたこと（推奨を撤回）、
+「波音リツは低音」という**推測の誤り**（実測は p50 360 Hz で C4–C5 中心）。
 
-**残っているのは素材そのものと、下の要ユーザー判断です。**
+**未取得:** 東北きりたんと No.7 はログイン必須で取得できませんでした（HTTP 応答で確認済み。
+kiritan の公開 GitHub はラベルのみで音声を含みません）。**低音域の補強**に効く素材なので、
+入手できたときに同じ検査を通します。
+
+**未実装:** 発声スタイルの coverage は、**技法ラベルを持つコーパス（GTSinger / VocalSet）でのみ**
+自動集計できます。ラベルの無い素材では手作業の注釈が要ります。
 
 ### 前提・依存
 

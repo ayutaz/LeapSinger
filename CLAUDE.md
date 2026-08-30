@@ -101,7 +101,20 @@ data/<db>/svc_shard.npz     # <name>|content [T,C] / |f0_interp [T] / |uv [T] / 
 
 **すべての `T` は完全一致させます。** loader（`svc_dataset.py`）は暗黙の transpose や補間を行わず、幅・フレーム数の不一致を例外にします。この「黙って直さない」性質は前処理ミスを早期に露出させるための設計なので、緩めないこと。
 
-**WAV からこの shard を生成する前処理はまだリポジトリ内に存在しません**（ContentVec/HuBERT + RMVPE + loudness の抽出器が未実装）。SVC の学習を回すには外部で shard を用意する必要があります。実装する際は encoder/model revision、層、sample rate、hop、loudness 定義、F0 extractor version を manifest に記録します。
+**`content_dim` は 256 になる予定です。** `doc/svc-content-encoder.md` の決定により、ContentVec 768 次元から固定ランダムに選んだ **256 次元**を shard に書きます（生の 768 は 1 段目の cache に残す）。**loader に切り出しをさせません** — 「黙って直さない」契約を崩すためです。`configs/svc_base.yaml` の `content_dim: 768` は抽出器が入るまでの暫定値で、`build_shard` の実装と同時に 256 へ変更します。
+
+**WAV から shard を生成する経路は実装途中です。** `preprocess/svc/` に部品が揃っています。
+
+| モジュール | 役割 |
+|---|---|
+| `align.py` | SSL 50 Hz -> mel grid（172.265625 Hz）の **left（直前保持）**整列。比が整数にならないので方式が契約になる |
+| `subset.py` | ContentVec 768 -> **256 次元**の部分集合（seed 0 が既定。index を manifest へ） |
+| `loudness.py` | フレーム log-RMS（**mel とフレーム数が一致**）と dataset 統計での正規化 |
+| `audit.py` / `coverage.py` / `split.py` / `report.py` | M0 の素材検査・音域と技法の集計・group 単位 split |
+
+**未実装:** `build_shard`（cache -> `svc_shard.npz`）と、ContentVec / RMVPE を呼ぶ 1 段目です。抽出は 2 段構成にします（1 段目が重い特徴を cache へ、2 段目が整列・正規化・次元削減）。補間方法と 256 次元 seed の ablation を 2 段目の再実行だけで回せるようにするためです。
+
+manifest には encoder の model revision と層、sample rate、hop、**SSL の stride と補間方法**、正規化、**256 次元の index と seed**、loudness の定義、F0 extractor version、入力 WAV の checksum を記録します。
 
 ## 自動化と安全装置
 

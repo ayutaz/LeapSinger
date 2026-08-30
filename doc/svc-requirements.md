@@ -102,8 +102,17 @@ multi-singer nonparallel singing corpus
 
 ## 8. 要ユーザー判断
 
-- target singer と追加 corpus の具体的な権利条件。
+**決着済み（2026-08-30）:**
+
+| 項目 | 決定 |
+|---|---|
+| 用途と配布 | **研究・個人利用のみ、モデルの配布なし**。CC-NC 系や research-only の素材も使える |
+| 生成音声の商用利用 | **行わない** |
+| target singer と追加 corpus の権利条件 | 波音リツ（target）/ GTSinger + 日本語 3 DB（base）/ VocalSet（未知 source test）。権利条件は [データセット台帳](svc-dataset-ledger.md) |
+
+**未決:**
+
 - 音質と遅延のどちらを優先するか。
-- target 固定モデルだけを配布するか、multi-singer base も配布するか。
-- 生成音声を商用利用するか。
 - blind test で合格とする最小差、評価者数、対象楽曲。
+- **将来 配布や商用利用へ移る場合**、使える素材が大きく変わります（台帳 5 節の B / C）。
+  その時点で素材の選定からやり直す必要があります。

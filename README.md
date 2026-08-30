@@ -181,8 +181,10 @@ OpenUTAU向けには、ボイスバンク一式（ONNX ＋ 設定 ＋ 辞書 ＋
 既存の harmonic excitation と rectified flow を駆動する、オフライン歌声変換モデルを
 開発しています。既存の音素＋durationによる歌声合成経路は変更しません。
 
-現時点ではモデル、特徴量データ契約、学習・評価経路まで実装済みで、ContentVec/HuBERT・
-RMVPEを実行して特徴量shardを作る前処理と、リアルタイムstudentは未実装です。
+現時点ではモデル、特徴量データ契約、学習・評価経路、素材の検査・集計・分割の道具まで
+実装済みです。content encoder は **ContentVec**（768次元 layer12、学習には固定ランダムに
+選んだ256次元）、F0 は **RMVPE**、SSL から mel grid への整列は **left（直前保持）**に決めています。
+**ContentVec を実行して特徴量shardを作る抽出器と、リアルタイムstudentは未実装です。**
 要件、設計、データ/GPU、学習、評価、先行研究・ライセンス、実装状況、出典を分割した
 調査ドキュメントは [doc/svc.md](doc/svc.md) を索引として参照してください。
 

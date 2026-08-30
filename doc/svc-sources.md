@@ -24,6 +24,9 @@
 | [`configs/svc_base.yaml`](../configs/svc_base.yaml) | SVC baseline config |
 | [`configs/3speaker_gan2d.yaml`](../configs/3speaker_gan2d.yaml) | 既存 SVS batch/update/GAN 設定の比較 |
 | [`test_svc_model.py`](../test_svc_model.py) | targeted verification の範囲 |
+| [`preprocess/svc/`](../preprocess/svc/) | 整列・部分集合・loudness・検査・coverage・split・report の実装 |
+| [`test_svc_preprocess.py`](../test_svc_preprocess.py) / [`test_svc_dataset.py`](../test_svc_dataset.py) | 契約テスト 90 件 |
+| [`doc/svc-content-encoder.md`](svc-content-encoder.md) / [`doc/svc-dataset-ledger.md`](svc-dataset-ledger.md) | encoder 選定と M0 台帳 |
 | [`pyproject.toml`](../pyproject.toml) / [`uv.lock`](../uv.lock) / `.python-version` | Python 3.13 固定、CUDA wheel index、依存の解決結果 |
 | [`CLAUDE.md`](../CLAUDE.md) | コマンド、共有スタック、データ契約、既知の落とし穴 |
 | [`doc/svc-plan.md`](svc-plan.md) | M0〜M6 の実行計画と完了条件 |
@@ -36,6 +39,10 @@
 - [pyshiro](https://github.com/wavtechyukky/pyshiro) — HSMM/HMM alignment と GPL-3.0。
 - [realigned-singing-labels](https://github.com/wavtechyukky/realigned-singing-labels) — label 内容と音声非同梱。
 - [pitch-benchmark](https://github.com/wavtechyukky/pitch-benchmark) — pitch extractor comparison。
+- [wavtechyukky/LeapSinger](https://github.com/wavtechyukky/LeapSinger) — **fork 元**。
+- [GTSinger](https://github.com/AaronZ345/GTSinger) — 9 言語・技法ラベル付き歌唱コーパス（CC BY-NC-SA 4.0）。
+- [VocalSet](https://zenodo.org/records/1442513) / [Annotated-VocalSet](https://zenodo.org/records/7061507) — 20 歌手・技法 17 種（CC BY 4.0）。
+- [RIFT-SVC](https://github.com/Pur1zumu/RIFT-SVC) — rectified-flow SVC。ContentVec + RMVPE + 44.1 kHz + -18 LUFS。
 - [Seed-VC](https://github.com/Plachtaa/seed-vc) — SVC baseline、model variants、steps、GPL-3.0、archive state。
 - [RIFT-SVC](https://github.com/Pur1zumu/RIFT-SVC) — rectified-flow SVC の公開実装例。
 - [DDSP-SVC](https://github.com/yxlllc/DDSP-SVC) — differentiable-DSP SVC の公開実装例。

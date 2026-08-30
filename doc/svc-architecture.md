@@ -37,7 +37,7 @@ source F0 + V/UV -> harmonic/noise excitation -> pseudo mel x0
 
 **決定:** ContentVec（`lengyue233/content-vec-best`、MIT、768 次元、layer 12）を採用し、学習には 768 から固定ランダムに選んだ 256 次元を使います。候補比較と根拠は [content encoder の選定](svc-content-encoder.md)。
 
-**未決:** mel grid への resampling 方法（SSL の 50 Hz と mel の 172.265625 Hz は整数比にならない）と、256 次元部分集合の選び方。いずれも再現性に直結するため manifest へ記録します。
+**決定:** mel grid への整列は **left（直前保持・左寄せ繰り返し）**。先読み 0 ms かつ元の SSL ベクトルを保持し、nearest（先読み 20 ms）や linear（先読み 20 ms・99.4% がブレンド）より劣る点がありません（[実測](svc-content-encoder.md) 6 節）。256 次元部分集合は **seed 0 を既定**とし、M2 で seed 1 と比較します。いずれも再現性に直結するため、**選ばれた index そのもの**を manifest へ記録します。
 
 **リスク:** SSL feature に source timbre が残ると、target singer への変換を妨げます。pitch/formant augmentation、speaker-adversarial loss、feature retrieval、encoder/layer の比較を候補とします。
 
@@ -51,7 +51,7 @@ F0 は音程保持と harmonic prior の両方に使います。無声区間は 
 
 source の強弱を保持する条件です。raw RMS では録音 gain やマイク差を学習する可能性があるため、log-RMS、窓幅、floor、正規化単位を固定します。
 
-**未決:** phrase 単位正規化か dataset/global 統計か。target dynamics の保持と source recording leakage の trade-off を比較します。
+**決定:** loudness 特徴量は **dataset 統計**で正規化します（phrase 単位ではありません）。phrase 単位だと phrase 間の強弱差が消え、歌の表情が平坦になるためです。音声側の loudness 正規化（RIFT-SVC は -18 LUFS）は別レイヤの話で、両立します。
 
 ## 3. ContentAdapter と condition
 

@@ -14,6 +14,12 @@
 | [realigned-singing-labels](https://github.com/wavtechyukky/realigned-singing-labels) | 歌声データセット用の再アライメント済みラベル | SVS 用ラベル資産。音声自体は含まない |
 | [pitch-benchmark](https://github.com/wavtechyukky/pitch-benchmark) | 複数 pitch extractor の比較 | SVC の F0 extractor 選定資料 |
 
+**確認済み:** このリポジトリは [wavtechyukky/LeapSinger](https://github.com/wavtechyukky/LeapSinger) の
+fork です（`gh repo view` の `parent`）。**同梱 NHVSing V3 は本プロジェクトと同一の mel 仕様
+（44.1 kHz / hop 256 / 128-mel / 40–16000 Hz ln）で、特定の 10 コーパスで学習されています。**
+そこに含まれない歌手の mel は vocoder にとって未知になり得ます。一覧と含意は
+[データセット台帳](svc-dataset-ledger.md) 7 節です。
+
 ```text
 既存 SVS:
 音素 + duration + F0 -> LeapSinger -> mel + F0 -> NHVSing -> WAV
