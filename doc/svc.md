@@ -54,6 +54,8 @@
 | vocoder | NHVSing と互換な 44.1 kHz・hop 256・128-bin ln-mel を出力する |
 | 学習順序 | multi-singer base の事前学習を推奨し、target singer へ fine-tune |
 | 学習環境 | 学習は vast.ai の Linux GPU インスタンスで行う。手元の Windows 機は開発・推論・検証用 |
+| 用途と配布 | **研究・個人利用のみ、モデルの配布なし**。非商用ライセンスのコーパスも使える（[台帳](svc-dataset-ledger.md)） |
+| 素材 | base は **GTSinger**（80.6 h / 20 歌手 / 48 kHz / 実録音）、未知 source の test は **VocalSet**、target は既存 3 DB |
 | 完了判定 | コードの存在ではなく、実音声・比較試聴・遅延実測まで段階別に判定する |
 
 ## 未決事項
