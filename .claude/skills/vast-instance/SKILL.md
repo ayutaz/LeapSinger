@@ -121,6 +121,10 @@ uv run python tools/smoke/run_smoke.py
 [leapsinger-experiment](../leapsinger-experiment/SKILL.md) に従う。長時間になるので
 バックグラウンドで回し、通知を待つ（sleep でポーリングしない）。
 
+**M3 で初めてインスタンスを立てるときは、base 学習の前に seed 0 / seed 1 の比較を済ませる。**
+手順は [`doc/svc-plan.md`](../../../doc/svc-plan.md) の M3「開始時にやること」。専用インスタンスを
+立てずに済ませるための決定なので、base 学習を先に始めないこと。
+
 ## 6. 成果物を回収する（破棄の前に必ず）
 
 **`destroy` するとディスクごと消える。取り消せない。**

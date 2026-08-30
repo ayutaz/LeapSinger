@@ -222,7 +222,10 @@ shard に書くのは 256 次元です（768 ではありません）。loader �
 
 **未実施:** 決定 2 の **seed 0 と seed 1 の比較**。shard は両方作ってありますが（`subset_seed`
 は manifest に記録済み）、overfit で差を見る作業は行っていません。既定の seed 0 で M2 を通した
-ため直列経路は止まっていませんが、**M3 の本学習の前に 1 度だけ確かめます**。
+ため直列経路は止まっていません。
+
+**決定（2026-08-30）: M3 のインスタンスで、base 学習を始める前に回します。** 専用インスタンスを
+立てずに済み、追加コストは数分です。手順は M3 の「開始時にやること」を参照。
 
 ---
 
@@ -305,7 +308,29 @@ base checkpoint、学習曲線、実測したスループットと VRAM、更新
 
 ### 前提・依存
 
-M2 完了、および M0 で multi-singer corpus の権利が確定していること。
+M2 完了、および M0 で multi-singer corpus の権利が確定していること。両方とも満たしています。
+
+### 開始時にやること（base 学習の前に）
+
+**決定:** M1 決定 2 の **seed 0 / seed 1 比較**をここで片づけます。インスタンスを立てた直後、
+base 学習を始める前に、同じ split・同じ seed・同じ更新 budget で 2 本の overfit を回して
+比較します。専用インスタンスを立てずに済み、追加は数分です。
+
+```bash
+# 2 段目だけを 2 通り回す（ContentVec / RMVPE の再実行は不要）
+uv run python -m preprocess.svc.run --from-cache data/ritsu_svc/_cache --out data/seed0 --subset-seed 0
+uv run python -m preprocess.svc.run --from-cache data/ritsu_svc/_cache --out data/seed1 --subset-seed 1
+# run 名を分けて 2 本。base checkpoint は別 run_name（上書きしない）
+uv run python -m train --config configs/svc_base.yaml --data_dirs data/seed0 \
+  --run_name svc_seed0 --out_root log --device cuda --max_updates 3000
+uv run python -m train --config configs/svc_base.yaml --data_dirs data/seed1 \
+  --run_name svc_seed1 --out_root log --device cuda --max_updates 3000
+uv run python tools/m2_verify.py --ckpt log/svc_seed0/ckpt_003000.pt --data data/seed0 --out out/seed0
+uv run python tools/m2_verify.py --ckpt log/svc_seed1/ckpt_003000.pt --data data/seed1 --out out/seed1
+```
+
+差が無ければ seed 0 で確定し、以後の全実験の基盤にします。差が出たら、その差を
+[content encoder の選定](svc-content-encoder.md) へ記録してから base 学習へ進みます。
 
 ### 規模の目安
 
