@@ -38,7 +38,6 @@ ALLOW = [
     "uv add tensorboard",
     "uv add --optional ops vastai",
     "uv sync --extra train --extra export",
-    "uv run python -m train --config configs/svc_base.yaml --run_name a",
     "uv run python -m unittest test_svc_model",
     "uv run python tools/smoke/run_smoke.py",
     "uv run python tools/vast.py create 123 --yes",
@@ -59,23 +58,26 @@ def run(cmd: str) -> int:
     return p.returncode
 
 
-def check_local_gpu_training() -> int:
-    """Windows で --device cuda の学習を止める（学習は vast.ai で行うと決めている）。
+def check_local_training() -> int:
+    """Windows での学習を **device によらず** 止める。学習はすべて vast.ai で行うと決めている。
 
+    CPU に逃げるのも駄目。遅いうえに実験記録の環境が本番と食い違う。
     Linux（= vast.ai インスタンス）では止めない。同じリポジトリを両方で使うため。
     """
     bad = 0
     win = sys.platform == "win32"
     cases = [
         ("uv run python -m train --config c.yaml --run_name a --device cuda", 2 if win else 0),
-        ("uv run python -m train --config c.yaml --run_name a --device cpu", 0),
-        ("uv run python -m train --config c.yaml --run_name a", 0),
+        ("uv run python -m train --config c.yaml --run_name a --device cpu", 2 if win else 0),
+        ("uv run python -m train --config c.yaml --run_name a", 2 if win else 0),
+        ("uv run python train.py --config c.yaml --run_name a", 2 if win else 0),
         ("uv run python -m train --config c.yaml --run_name a --device cuda  # guard:allow", 0),
         ("uv run python tools/smoke/run_smoke.py --device cuda", 0),   # 疎通確認は別
+        ("uv run python -m preprocess.svc.run --wav-dir x --out y", 0),  # 前処理は別
     ]
     for cmd, want in cases:
         if run(cmd) != want:
-            print(f"NG ローカル GPU 学習チェック (want {want}): {cmd}")
+            print(f"NG ローカル学習チェック (want {want}): {cmd}")
             bad += 1
     return bad
 
@@ -96,12 +98,16 @@ def main() -> int:
     try:
         (tmp / "existing").mkdir()
         (tmp / "existing" / "ckpt_000100.pt").touch()
+        win = sys.platform == "win32"
+        # Windows では「学習はローカルで回さない」が先に出るので、# guard:allow を付けて
+        # check_train 側の判定だけを見る。
+        mark = "  # guard:allow" if win else ""
         pairs = [
             (f"uv run python -m train --config c.yaml --out_root {tmp} "
              f"--run_name existing --init_from base.pt --finetune", 2),
-            (f"uv run python -m train --config c.yaml --out_root {tmp} --run_name existing", 0),
+            (f"uv run python -m train --config c.yaml --out_root {tmp} --run_name existing{mark}", 0),
             (f"uv run python -m train --config c.yaml --out_root {tmp} "
-             f"--run_name fresh --init_from base.pt --finetune", 0),
+             f"--run_name fresh --init_from base.pt --finetune{mark}", 0),
         ]
         for cmd, want in pairs:
             if run(cmd) != want:
@@ -110,8 +116,8 @@ def main() -> int:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    bad += check_local_gpu_training()
-    total = len(BLOCK) + len(ALLOW) + 3 + 5
+    bad += check_local_training()
+    total = len(BLOCK) + len(ALLOW) + 3 + 7
     print(f"{total - bad}/{total} 一致" + ("" if bad else "  （すべて期待どおり）"))
     return bad
 

@@ -81,25 +81,25 @@ def check_train(cmd: str) -> tuple[str, str] | None:
     return None
 
 
-def check_local_gpu_training(cmd: str) -> tuple[str, str] | None:
-    """手元の Windows 機で GPU 学習を始めようとしていないか。
+def check_local_training(cmd: str) -> tuple[str, str] | None:
+    """手元の Windows 機で学習を始めようとしていないか。**device は問わない。**
 
-    **決定:** 学習は vast.ai の Linux インスタンスで行い、手元の Windows 機は開発・推論・
-    検証に使う（doc/svc-plan.md、doc/svc-data-compute.md）。ローカルで回すと、
-    (1) 実験記録の環境が本番と食い違う、(2) 他の作業と GPU を取り合って
-    "unspecified launch failure" のような一過性の失敗を起こす。実際に起きた。
+    **決定:** 学習はすべて vast.ai の Linux インスタンスで行い、手元の Windows 機は
+    開発・推論・検証に使う（doc/svc-plan.md、doc/svc-data-compute.md）。
+
+    `--device cpu` に逃げるのも駄目。GPU より桁で遅く（実測で 1 phrase 1200 step が CPU 約 60 分）、
+    実験記録の環境が本番と食い違う。GPU をローカルで使うと他の作業と取り合って
+    "unspecified launch failure" を起こす（実際に発生）。
 
     Linux では止めない。同じリポジトリを vast.ai 側でも使うため。
     """
     if sys.platform != "win32":
         return None
-    if not re.search(r"-m\s+train(?![\w.])|train\.py", cmd):
+    if not re.search(r"-m\s+train(?![\w.])|(?<![\w./-])train\.py", cmd):
         return None
-    if not re.search(r"--device[=\s]+cuda", cmd):
-        return None
-    return ("手元の Windows 機での GPU 学習は行わない決定になっている",
-            "vast.ai のインスタンスで実行する（`uv run python tools/vast.py search` -> "
-            "`create` -> `tools/vast_bootstrap.sh`）。手元で動かすなら `--device cpu`")
+    return ("学習はすべて vast.ai で行う決定になっている（device は問わない。CPU も不可）",
+            "`uv run python tools/vast.py search` -> `create` -> `tools/vast_bootstrap.sh` の順に "
+            "インスタンスを用意し、そこで学習する")
 
 
 def main() -> int:
@@ -111,7 +111,7 @@ def main() -> int:
     if not cmd or ALLOW_MARK in cmd:
         return 0
 
-    for check in (check_local_gpu_training, check_train):
+    for check in (check_train, check_local_training):
         hit = check(cmd)
         if hit:
             why, instead = hit

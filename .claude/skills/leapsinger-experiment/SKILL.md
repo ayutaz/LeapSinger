@@ -47,13 +47,17 @@ ls log/                      # 既存の run を必ず確認してから決め�
 | `data.eval_songs`（曲が 1 つだけ） | `n_hold = min(eval_songs, 曲数-1)` で eval が空になる。評価は自動で飛ぶ |
 | `--init_from` で SVS → SVC | 同一構造前提。arch をまたぐ部分ロードは未実装 |
 
-## 3. 走らせる — **手元の GPU では回さない**
+## 3. 走らせる — **手元では回さない（CPU も含めて）**
 
-**決定:** 学習は vast.ai の Linux インスタンスで行い、手元の Windows 機は開発・推論・検証に使います。
-手元で `--device cuda` の学習を始めると hook が止めます（`check_local_gpu_training`）。
-理由は 2 つあります。実験記録の環境が本番と食い違うこと、そして他の作業と GPU を取り合って
-`unspecified launch failure` のような一過性の失敗を起こすこと（実際に起きました）。
-GPU が要るときは [vast-instance](../vast-instance/SKILL.md) に従ってインスタンスを用意します。
+**決定:** 学習はすべて vast.ai の Linux インスタンスで行います。手元の Windows 機は開発・推論・
+検証に使います。手元で `train.py` を起動すると **device によらず** hook が止めます
+（`check_local_training`）。
+
+**`--device cpu` に逃げてはいけません。** 実測で 1 phrase 1200 step に約 60 分かかり、
+実験記録の環境も本番と食い違います。所要が短くても、遅くても、ローカルで済ませようとしないこと。
+ローカル GPU は他の作業と取り合って `unspecified launch failure` を起こしました（実際に発生）。
+
+インスタンスは [vast-instance](../vast-instance/SKILL.md) に従って用意します。
 
 
 ```bash
