@@ -18,8 +18,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
+
+# CUDA の conv / matmul は既定で非決定的で、同じ入力でも実行ごとに ln-mel が
+# max 8e-2 ずれる（実測）。M2 ゴール 4 は再現を求めるので、torch を import する前に
+# 決定的モードを有効にする。CUBLAS_WORKSPACE_CONFIG は CUDA 初期化前に要る。
+if os.environ.get("LEAPSINGER_NONDETERMINISTIC") != "1":
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 import numpy as np
 import soundfile as sf
@@ -51,8 +58,16 @@ def main() -> int:
     ap.add_argument("--num-steps", type=int, default=None)
     a = ap.parse_args()
 
+    import torch
+
     from infer import infer_svc_mel, load_acoustic, load_vocoder, mel_to_wav
     from preprocess.f0_rmvpe import extract_f0_rmvpe
+
+    deterministic = os.environ.get("LEAPSINGER_NONDETERMINISTIC") != "1"
+    if deterministic:
+        torch.use_deterministic_algorithms(True)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
     data = Path(a.data)
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
@@ -88,6 +103,8 @@ def main() -> int:
         "goal3_length_ok": len(wav_pred) == frames * hop,
         "goal3_length": {"wav_samples": int(len(wav_pred)), "expected": frames * hop},
         "goal4_reproducible": bool(np.array_equal(mel_a, mel_b)),
+        "goal4_deterministic_mode": deterministic,
+        "goal4_max_diff": float(np.abs(mel_a - mel_b).max()),
         "mel_mae_vs_gt": float(np.abs(mel_a - gt_mel).mean()),
         "mel_range": [float(mel_a.min()), float(mel_a.max())],
         "wav_peak": float(np.abs(wav_pred).max()),
