@@ -27,9 +27,16 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
 - `uv.lock` はコミット対象です。依存を変えたら lock の差分も一緒にコミットすること。
 - **PyTorch は CUDA 版を pyproject が指定しています。** PyPI の Windows 版 torch は CPU ビルドなので、`[[tool.uv.index]] pytorch-cu130` + `[tool.uv.sources] torch` で PyTorch 公式 wheel index を明示しています。Windows / Linux は `uv sync` だけで GPU 版が入り、macOS は marker で PyPI（CPU/MPS）に落ちます。CUDA channel を変えるときは index の url（`cu126` / `cu128` / `cu130` / `cu132`）を書き換えて `uv lock` をやり直します。`uv add torch --index ...` を単発で打って pyproject の index 定義と食い違わせないこと。
 
-前処理（SVS のみ。データセット 1 つにつき recipe yaml が必要）:
+前処理（SVS。データセット 1 つにつき recipe yaml が必要）:
 
     uv run python -m preprocess.run --recipe configs/recipes/<db>.yaml   # -> data/<db>/{shard.npz,metadata.json}
+
+前処理（SVC。WAV ディレクトリから直接。音素ラベルは不要）:
+
+    uv run python -m preprocess.svc.run --wav-dir download/ritsu --out data/ritsu_svc
+    uv run python -m preprocess.svc.run --from-cache data/ritsu_svc/_cache --out data/ritsu_svc --subset-seed 1
+
+**2 段構成です。** 1 段目（重い・GPU）が ContentVec と RMVPE を回して `_cache/` へ、2 段目（軽い・CPU）が整列・正規化・次元削減を行って shard を書きます。`--from-cache` で 2 段目だけを回せるので、**補間方法や 256 次元 seed の ablation に ContentVec と RMVPE の再実行が要りません。**
 
 学習（SVS も SVC も同じエントリポイント。`model.arch` で分岐）:
 
@@ -49,6 +56,7 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
     uv run python -m unittest test_svc_model -v
     uv run python -m unittest test_svc_preprocess -v  # SVC 特徴抽出前処理（重いモデル不要）
     uv run python -m unittest test_svc_dataset -v     # M0 の素材検査・split・音域集計
+    LEAPSINGER_INTEGRATION=1 uv run python -m unittest test_svc_preprocess_integration -v  # 実モデル（既定は skip）
     uv run python -m unittest test_svc_model.HarmonicSVCModelTests.test_forward_and_infer_reuse_flow_with_svc_conditioning
     uv run python tools/hooks/test_guard.py    # コマンド guard の回帰テスト
 

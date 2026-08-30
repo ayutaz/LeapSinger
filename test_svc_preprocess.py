@@ -19,6 +19,7 @@ import numpy as np
 from leapsinger.config import MelSpec
 from leapsinger.mel import wav_to_mel_nhv
 from preprocess.svc.align import align_left
+from preprocess.svc.chunk import chunk_spans
 from preprocess.svc.extract import extract_phrase
 from preprocess.svc.shard import build_shard
 from preprocess.svc.loudness import dataset_stats, frame_log_rms, normalize_with_stats
@@ -481,6 +482,62 @@ class ExtractPhraseTests(unittest.TestCase):
         bad = lambda wav16, sr: np.zeros(10, dtype=np.float32)
         with self.assertRaises(ValueError):
             self._extract(content_encoder=bad)
+
+
+class ChunkSpansTests(unittest.TestCase):
+    """長い曲を phrase へ切る。
+
+    SVS 側は `.lab` の音素境界で切りますが、SVC は音素ラベルを使わないので固定長で切ります。
+    名前は `{song}_{NNNN}` にする必要があります（`dataset.py` の `_song_of()` が曲単位の
+    分割に使うため。崩すと leakage 防止が効かなくなります）。
+    """
+
+    SR = 44100
+
+    def test_covers_the_signal_in_order_without_gaps(self):
+        spans = chunk_spans(self.SR * 10, self.SR, chunk_sec=3.0, min_sec=0.5)
+        self.assertEqual(spans[0][0], 0)
+        for (a, b), (c, d) in zip(spans, spans[1:]):
+            self.assertEqual(b, c, "隙間や重複がある")
+            self.assertLess(a, b)
+
+    def test_every_chunk_is_the_requested_length_except_the_tail(self):
+        spans = chunk_spans(self.SR * 10, self.SR, chunk_sec=3.0, min_sec=0.5)
+        for a, b in spans[:-1]:
+            self.assertEqual(b - a, int(3.0 * self.SR))
+
+    def test_drops_a_tail_shorter_than_the_minimum(self):
+        # 10.2 秒を 3 秒で切ると末尾 1.2 秒。min_sec 2.0 なら捨てる。
+        spans = chunk_spans(int(self.SR * 10.2), self.SR, chunk_sec=3.0, min_sec=2.0)
+        self.assertEqual(len(spans), 3)
+        self.assertEqual(spans[-1][1], int(3.0 * self.SR) * 3)
+
+    def test_keeps_a_tail_at_or_above_the_minimum(self):
+        spans = chunk_spans(int(self.SR * 10.2), self.SR, chunk_sec=3.0, min_sec=1.0)
+        self.assertEqual(len(spans), 4)
+        self.assertEqual(spans[-1][1], int(self.SR * 10.2))
+
+    def test_returns_nothing_for_a_signal_shorter_than_the_minimum(self):
+        self.assertEqual(chunk_spans(int(self.SR * 0.2), self.SR, chunk_sec=3.0, min_sec=0.5), [])
+
+    def test_a_signal_shorter_than_a_chunk_but_long_enough_is_one_span(self):
+        n = int(self.SR * 1.5)
+        self.assertEqual(chunk_spans(n, self.SR, chunk_sec=3.0, min_sec=0.5), [(0, n)])
+
+    def test_is_deterministic(self):
+        a = chunk_spans(self.SR * 37, self.SR, chunk_sec=4.0, min_sec=1.0)
+        b = chunk_spans(self.SR * 37, self.SR, chunk_sec=4.0, min_sec=1.0)
+        self.assertEqual(a, b)
+
+    def test_rejects_non_positive_chunk_length(self):
+        for bad in (0.0, -1.0):
+            with self.subTest(chunk_sec=bad):
+                with self.assertRaises(ValueError):
+                    chunk_spans(self.SR, self.SR, chunk_sec=bad, min_sec=0.5)
+
+    def test_rejects_a_minimum_longer_than_the_chunk(self):
+        with self.assertRaises(ValueError):
+            chunk_spans(self.SR * 10, self.SR, chunk_sec=1.0, min_sec=2.0)
 
 
 if __name__ == "__main__":
