@@ -43,7 +43,7 @@
 |---|---|---|---|
 | **M0** ✅ | データ確定 | 学習してよい素材を法的・品質的に固定する | dataset ledger と split list |
 | **M1** 🔨 | 特徴抽出前処理 | WAV から `svc_shard.npz` を再現可能に作る | 先に書いた失敗するテスト、再実行で一致する shard と manifest |
-| **M2** | 実音声 smoke | 配線が実音声で成立することを示す | overfit した phrase の WAV |
+| **M2** ✅ | 実音声 smoke | 配線が実音声で成立することを示す | overfit した phrase の WAV |
 | **M3** | multi-singer base | 話者に依存しない変換器の土台を作る | 未知 source singer で崩れない base ckpt |
 | **M4** | target fine-tune | target singer の音色を再現する | offline teacher ckpt と指標一式 |
 | **M5** | offline 品質ゲート | 外部 baseline と同条件で比較する | Seed-VC との blind test 結果 |
@@ -221,6 +221,37 @@ shard に書くのは 256 次元です（768 ではありません）。loader �
 ### 成果物
 
 overfit run の log、生成 WAV、再現性の確認記録。
+
+### 進捗（2026-08-30）: 完了
+
+**確認済み:** vast.ai の RTX A4000 インスタンス（$0.098/hr、約 27 分、実費 約 $0.04）で
+波音リツ 2 phrase（各 3 秒）を 3,000 step overfit し、WAV を生成しました。
+検証は [`tools/m2_verify.py`](../tools/m2_verify.py)、報告は `m2_report.json` です。
+
+| ゴール | 結果 |
+|---|---|
+| 1. overfit できる | flow 0.00710 → 0.00235（最小 0.00115、**3.0 倍**）、recon 0.03573 → 0.01889（最小 0.00193） |
+| 2. **WAV を生成できる** | **`m2_pred.wav` 3.00 秒 / 44.1 kHz / peak 0.950。完了レベル 3 の到達判定を満たす** |
+| 3. F0・無声・長さの整合 | 長さ 132,096 = 516 × 256 で一致。**F0 相関 0.9991・中央値 0.012 半音・p90 0.075 半音**、V/UV 一致率 0.988 |
+| 4. 再現性 | 決定的モードで **bit 一致**（max diff 0.0） |
+| 5. 学習と推論で正規化が同一 | `features_to_item()` が manifest の統計と部分集合を当て、**shard の値と 1 bit も違わない**ことをテストで固定 |
+
+**切り分け:** ground-truth mel を NHVSing に直接通した WAV も出しました。GT 側の F0 相関 0.9990 /
+中央値 0.012 半音に対し、予測側は 0.9991 / 0.012 半音で**ほぼ同等**です。したがって
+**この phrase では音響モデルが vocoder の性能を損なっていません**。
+
+#### この過程で見つかった欠陥 2 件
+
+**1. 無声だけの phrase が学習に入っていた（M1 の欠陥）。** 最初の overfit で生成された WAV が
+無音になりました。追うと入力の `uv` が全フレーム 0 で、曲の先頭 27 秒がイントロの無音だったためです。
+固定長で先頭から切ると、**89 phrase 中 35 件（39%）が完全に無声**になっていました。
+`chunk.py` に `voiced_ratio()` を足し、抽出時に `--min-voiced`（既定 0.3）未満を捨てるようにしました。
+除外後は有声率が最小 0.516 / 平均 0.857 になりました。**合成データでは出ない欠陥です。**
+
+**2. CUDA 推論が bit 再現しない。** 切り分けたところ RNG ではなく CUDA の conv/matmul の
+非決定性でした（CPU は bit 一致、CUDA は max 7.95e-02 / mean 4.33e-04 の差）。
+`torch.use_deterministic_algorithms(True)` と `CUBLAS_WORKSPACE_CONFIG` を有効にすると
+**CUDA でも bit 一致**します。検証スクリプトでは既定で有効にしました。
 
 ### 前提・依存
 

@@ -179,7 +179,8 @@ def cmd_destroy(a):
         print(f"インスタンス {a.instance_id} を破棄します（データは消えます・取り消し不可）。\n"
               "実行するには --yes を付けてください。")
         return
-    run(["destroy", "instance", str(a.instance_id)])
+    # vastai は既定で確認プロンプトを出す。stdin が無い環境では中断されるので -y を渡す。
+    run(["destroy", "instance", str(a.instance_id), "-y"])
 
 
 def main():
