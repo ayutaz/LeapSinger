@@ -170,7 +170,7 @@ hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の 
 - 「世界初」「唯一」は使わない（rectified-flow SVC も harmonic modelling も先行研究がある）。
 - 「1-step」は acoustic flow の step 数であり、pipeline 全体の話ではない。
 
-現在の到達点は**完了レベル 3（実データ）**です。実音声から shard を作り、23 話者・約 18 時間の multi-singer base を学習し、未知 source で内容が崩壊しないことまで実測しました（M0〜M3 完了）。**target fine-tune、音質と話者類似度の評価、Seed-VC 比較、streaming student は未到達**です（`doc/svc-implementation-status.md` の検証済み / 未検証の境界を参照）。
+現在の到達点は**完了レベル 3（実データ）**です。実音声から shard を作り、23 話者・約 18 時間の multi-singer base を **60,000 step** 学習し、未知 source で内容が崩壊しないことまで実測しました（M0〜M3 完了）。**target fine-tune、音質と話者類似度の評価、Seed-VC 比較、streaming student は未到達**です（`doc/svc-implementation-status.md` の検証済み / 未検証の境界を参照）。
 
 ## 既知の落とし穴
 
@@ -178,7 +178,7 @@ hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の 
 - **ローカルの GPU は `nvidia-smi` が正常に見えても context 生成に失敗することがあります**（`CUDA error: CUDA-capable device(s) is/are busy or unavailable`）。`torch.cuda.is_available()` は driver の有無しか見ないので **True を返しても使えるとは限りません**。判定するなら `torch.zeros(1, device="cuda")` を実際に確保すること。この状態では推論スクリプトも落ちるので `--device cpu` で回します。
 - **CPU で回すときは `CUDA_VISIBLE_DEVICES=-1` を渡すこと。** torch 2.13 の optimizer は `step()` ごとに `torch.accelerator.current_stream()` を呼ぶため、CPU tensor しか無くても壊れた CUDA に触って落ちます。**`""` では効かず `-1` が要ります。** `run_smoke.py --device cpu` は自動で渡します。`train.py` の `pin_memory` も `_loader_kwargs()` で CUDA のときだけ有効です（回帰テストは `test_svc_model.LoaderKwargsTests`）。
 - **`tools/smoke/` の合成データは `configs/svc_base.yaml` の `model.content_dim` を読んで作ります。** ここを定数に戻すと、config を変えたときに SVC の学習・再開・推論ステージが黙って落ちます（実際に起きました）。
-- **`num_steps` は音質に効きます。** よく学習された rectified flow なら 1 step と多 step はほぼ一致するはずですが、M3 の base では **16 step にすると spectral centroid の不足が平均 −17% → −5% に減ります**。差が出ること自体が **1 step 写像の未収束**を示します。比較や報告では **step 数を必ず併記**すること。多 step は行き過ぎることもあります（実測で上限比 +10%）。
+- **`num_steps` は音質に効きます。** よく学習された rectified flow なら 1 step と多 step はほぼ一致するはずですが、M3 の base では 30,000 step 時点で 1 step −18.1% / 16 step −7.3%（乖離 10.8 点）、**60,000 step で 1 step −13.7% / 16 step −7.7%（乖離 6.0 点）**でした。**差が縮むこと自体が rectification の進行**を示します。比較や報告では **step 数を必ず併記**すること。多 step は行き過ぎることもあります（実測で上限比 +10%）。
 - **持ち込み音源は学習分布より大きいので `--match-loudness` を付けること。** 配信用に整えられた音源は peak 1.0 付近まで上げられており、学習素材（波音リツ DB は peak 0.107）から大きく外れます。実測で loudness 条件が **+1.40σ** に出て、spectral centroid が上限比 **−47%** まで落ちました。合わせると **−24%** で他の素材と同じ範囲に戻ります（`preprocess/svc/loudness.py` の `loudness_match_gain`）。
 - **推論時に入力の音量を勝手に触らないこと。** 学習（`preprocess.svc.run`）は生の音量のまま特徴を取ります。推論側で peak 正規化すると loudness 条件が学習分布からずれ、モデルが低域を持ち上げて高域を削ります（波音リツ DB は peak 0.107 なので実質 19 dB の増幅になり、spectral centroid が 620 → 368 Hz に落ちました）。`features_to_item()` は正規化の同一性を保証しますが、**その手前で波形を加工すると保証の外**です。
 - **内容指標だけで音の劣化を判断しないこと。** 上の不具合で centroid が 620 → 368 Hz に落ちても、content cos は 0.8217 → 0.8096 としか動きませんでした。`tools/audio_metrics.py` の帯域指標を併せて見ます。

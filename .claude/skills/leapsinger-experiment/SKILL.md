@@ -33,7 +33,7 @@ ls log/                      # 既存の run を必ず確認してから決め�
 
 | run | 中身 | 使い方 |
 |---|---|---|
-| `m3_base` | **M3 の multi-singer base**。23 話者 / 約 18 時間 / 30,000 step。`ckpt_030000.pt` 134.7 MB | M4 の `--init_from` の入力。**別の `run_name` で fine-tune する** |
+| `m3_base` | **M3 の multi-singer base**。23 話者 / 約 18 時間 / **60,000 step**。`ckpt_060000.pt` 134.7 MB（30,000 step 版も比較基準として保存済み） | M4 の `--init_from` の入力。**別の `run_name` で fine-tune する** |
 | `svc_seed0` / `svc_seed1` | 256 次元部分集合の A/B（3,000 step） | 比較の記録。再利用しない |
 
 M3 の base は `spk_map` に 23 話者を持ちます（波音リツは **spk_id 22**、3 音源が同じ id）。
@@ -153,7 +153,8 @@ TensorBoard の events、**話者 25 分の `manifest.json` / `metadata.json`**�
 
 **`num_steps` を振ってみること。** rectified flow は 1 step と多 step がほぼ一致するのが理想で、
 **差が出るなら 1 step 写像が未収束**という直接の証拠になります。M3 の base では 16 step にすると
-spectral centroid の不足が平均 **−17% → −5%** に減りました。品質を報告するときは
+spectral centroid の不足が 30,000 step 時点で **1 step −18.1% / 16 step −7.3%**（乖離 10.8 点）、60,000 step で **1 step −13.7% / 16 step −7.7%**（乖離 **6.0 点**）でした。
+**乖離が縮むこと自体が rectification の進行**を示します。品質を報告するときは
 **step 数を必ず併記**すること（多 step は行き過ぎることもある。実測で上限比 +10%）。
 
 ## 7. 主張の範囲を守る

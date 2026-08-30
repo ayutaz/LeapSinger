@@ -129,6 +129,9 @@ uv run python -m preprocess.svc.run --wav-dir download/ritsu --out data/x --devi
 | base 学習 | 8.14 step/s、30,000 step が約 60 分 |
 | peak VRAM | **1.95 GB**（24 GB 級は要らなかった） |
 
+**実測（RTX 4090 / 実効 $0.371 per hour、M3 の継続 run）:** base 学習 **11.74 step/s**（3090 比 **1.44 倍**）、peak VRAM 2.0 GB。素材の再生成に 69.4 分、HF の取得に 23.9 分。
+**実費 $2.148**（GPU $1.157 / download $0.868 / storage $0.111 / upload $0.012）。
+
 **ディスク課金は無視できません。** 150 GB を付けたら $0.136/hr の offer が実効 $0.21/hr に
 なりました（+54%）。**必要量を見積もってから付けること。** 上の構成なら実測 51 GB です。
 
