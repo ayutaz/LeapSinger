@@ -93,6 +93,10 @@ uv run python -m train --config <config> \
    これは [`doc/svc-data-compute.md`](../../../doc/svc-data-compute.md) の見積もりを実測へ置き換える材料であり、
    vast.ai なら**そのまま料金の見積もり**になる。
 
+   **batch を上げても速くなりません（2026-08-31 実測）。** batch 16/32/64 で 117.5/140.1/158.4
+   examples/s、peak VRAM 1.95/3.66/7.10 GB。**4 倍にして 1.35 倍**で、GPU はほぼ演算飽和です。
+   VRAM が余っていても速度はついてきません。効くのは GPU 自体の速度か、未実装の AMP です。
+
    **実測の例（2026-08-30、RTX 3090 / 23 話者の multi-singer base）:** 8.14 step/s、
    130 ex/s、151k frames/s、**peak VRAM 1.95 GB**。見積もり表の「multi-singer base は 24 GB」は
    大きく外していた。`max_batch_size: 16` が先に効いて 1 batch が約 22,000 フレームで

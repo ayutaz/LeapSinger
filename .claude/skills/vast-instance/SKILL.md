@@ -31,6 +31,8 @@ API token は `.env`（`.gitignore` 対象）に置く。`tools/vast.py` が
   1 度崩した。素材の構造（GTSinger の階層など）は**借りる前に手元のサンプルで確かめられる**。
 - **ディスク量を見積もっておく。** ディスクは実効料金に効く（下の 3 節）。M3 の実測は
   音声 11 GB + shard 29 GB + 環境 11 GB = **51 GB**。
+- **通信量の単価を見ておく。** `search` の `$/TB` 列。**環境構築だけで 8 GB 前後**落ちるので
+  どの run にも必ず載る。実測で offer 間に **13 倍の開き**（0.3〜4.0 $/TB）があった。
 
 ## 2. 探す（課金なし）
 
@@ -74,7 +76,7 @@ uv run python tools/vast.py create <offer_id> --disk 60 --yes
 | 事象 | 対処 |
 |---|---|
 | `vastai execute <id> '<cmd>'` は**制限付き**で、任意コマンドは `Invalid command given` (400) | **SSH を使う。** `execute` は当てにしない |
-| SSH には**鍵の登録**が要る | `vastai show ssh-keys` で確認。無ければ `vastai create ssh-key`。`~/.ssh/id_ed25519_vast` が登録済みだった |
+| SSH には**鍵の登録**が要る | `vastai show ssh-keys` で確認。無ければ `vastai create ssh-key`。**アカウントに登録済みの鍵が手元の鍵とは限りません**（実測: 登録は別マシンの鍵で、手元の `~/.ssh/id_ed25519_vast` では `Permission denied (publickey)` になった）。その場合は**インスタンスへ個別に付ける**: `vastai attach ssh <instance_id> "$(cat ~/.ssh/id_ed25519_vast.pub)"`。数秒で有効になる |
 | `vastai destroy instance` は確認プロンプトを出し、stdin が無いと `Aborted.` | `-y` が要る。`tools/vast.py` が渡すようにした |
 | `search offers 'id=<N>'` が、その offer が実在しても**空を返す** | `create` の料金プレビューは当てにならない。**一覧に出ている価格を見る** |
 | offer ID の**回転が速い** | 検索してすぐ作る。数分置くと消える |
@@ -91,6 +93,8 @@ uv run python tools/vast.py create <offer_id> --disk 60 --yes
 | `ssh ... 'cmd &'` は SSH が channel を閉じないので戻ってこない | `setsid nohup ... < /dev/null > log 2>&1 &` で完全に切り離し、ログを別途 `tail` する |
 | 長時間ジョブの進捗を `ssh` で毎回取ると turn を食う | 完了マーカー（`echo "=== 完了 ==="`）を仕込み、`until grep -q ...; do sleep 60; done` を**バックグラウンドで 1 本**回して通知を待つ |
 | ダウンロードの進捗バーが**巨大な出力**になる | 取得するときは `grep -aE "^\[...\]"` などで必ず絞る。生の `tail` を投げない |
+| **素材はインスタンスと一緒に消える** | M3 の shard 29 GB は `destroy` で消えた。学習を継続するには**素材の再生成（実測 約 65 分）と checkpoint の再アップロードが要る**。「学習だけ 1 時間」で見積もると外す |
+| HF の取得速度は回線ではなく**先方の律速**で決まる | 7.4 Gbps の offer でも 7,977 ファイルに 20 分以上かかった（前回は 900 Mbps の offer で 9 分）。回線速度で選んでも縮まないことがある |
 
 **接続:**
 
@@ -127,6 +131,11 @@ uv run python -m preprocess.svc.run --wav-dir download/ritsu --out data/x --devi
 
 **ディスク課金は無視できません。** 150 GB を付けたら $0.136/hr の offer が実効 $0.21/hr に
 なりました（+54%）。**必要量を見積もってから付けること。** 上の構成なら実測 51 GB です。
+
+**通信課金はもっと見落とします。** M3 の継続 run の実費 **$2.148** の内訳は
+GPU $1.157 / **download $0.868** / storage $0.111 / upload $0.012 で、**通信が 40%** でした。
+回線が速い offer を選びましたが、HF 側が律速で速度の恩恵は無く、単価だけ高くつきました。
+**`search` の `$/TB` 列を見てから選ぶこと。**
 
 ## 4. 接続して確認する
 

@@ -146,15 +146,21 @@ def cmd_search(a):
         print("条件に合う offer がありません。--vram を下げるか --max-price を上げてください。")
         return
     print(f"\n{'offer_id':>10} {'GPU':<22} {'n':>2} {'VRAM':>6} {'$/hr':>7} "
-          f"{'disk':>6} {'down':>7} {'rel':>5}  地域")
+          f"{'disk':>6} {'down':>7} {'$/TB':>6} {'rel':>5}  地域")
     for o in offers[:a.limit]:
         print(f"{o.get('id', 0):>10} {str(o.get('gpu_name', ''))[:22]:<22} "
               f"{o.get('num_gpus', 0):>2} {o.get('gpu_ram', 0) / 1000:>5.0f}G "
               f"{o.get('dph_total', 0):>7.3f} {o.get('disk_space', 0):>5.0f}G "
               f"{o.get('inet_down', 0):>6.0f}M "
+              f"{o.get('internet_down_cost_per_tb', 0) or 0:>6.1f} "
               f"{o.get('reliability', o.get('reliability2', 0)) or 0:>5.2f}  "
               f"{o.get('geolocation', '')}")
-    print(f"\n作成: uv run python tools/vast.py create <offer_id> --disk {a.disk} --yes")
+    # **通信量にも課金される。** M3 の継続 run では 11 GB の素材取得 + 環境の wheel で
+    # download 課金が $0.868 になり、総額 $2.15 の 40% を占めた（GPU 課金は $1.157）。
+    # 環境の構築だけで torch + CUDA wheel が 8 GB 前後を落とすので、どの run でも必ず載る。
+    print(f"\n注意: $/TB は**下り通信の単価**。環境構築だけで 8 GB 前後、素材を落とすとさらに乗る。"
+          f"\n      実例: 約 30 GB の取得で $0.87（GPU 課金 $1.16 の 3/4 に相当）。"
+          f"\n作成: uv run python tools/vast.py create <offer_id> --disk {a.disk} --yes")
 
 
 def cmd_create(a):
