@@ -23,7 +23,10 @@ class AuditThresholds:
     max_silence_ratio: float = 0.5     # 半分以上が無音なら素材として使えない
     max_dc_offset: float = 0.02        # 直流オフセット
     min_sec: float = 0.3               # configs の data.min_sec と揃えた
-    min_bandwidth_hz: float | None = None   # None で無効。実音声には mel.fmax と同じ 16000 を推奨
+    # None で無効。**mel.fmax (16000) を入れてはいけません。** 実歌唱の帯域は内容で大きく変わり
+    # （VocalSet 実測で p05 10.4k / p50 16.0k / p75 22.0k Hz）、16000 で切ると 51% が落ちます。
+    # 帯域制限の判定は「1 クリップ」ではなく「コーパス全体の分布」で行ってください（下の関数の説明）。
+    min_bandwidth_hz: float | None = None
 
 
 def audit_clip(wav: np.ndarray, sr: int, *, expected_sr: int,
@@ -73,12 +76,21 @@ def audit_clip(wav: np.ndarray, sr: int, *, expected_sr: int,
     return reasons
 
 
-def effective_bandwidth_hz(wav: np.ndarray, sr: int, *, floor_db: float = -60.0) -> float:
+def effective_bandwidth_hz(wav: np.ndarray, sr: int, *, floor_db: float = -60.0,
+                           n_fft: int = 8192, max_windows: int = 48) -> float:
     """実際にエネルギーが入っている上限周波数を返す。
 
-    低い sample rate から上げただけの素材を見抜くために使います。`mel.fmax` は 16,000 Hz なので、
-    24 kHz 音源（Nyquist 12 kHz）を 44.1 kHz へ上げても 12〜16 kHz は空のままです。それを混ぜて
-    学習すると、その帯域を「無い」と学習してこもった出力になります。
+    低い sample rate から上げただけの素材を見抜くために使います。24 kHz 音源（Nyquist 12 kHz）を
+    44.1 kHz へ上げても 12〜16 kHz は空のままで、それを混ぜて学習するとその帯域を「無い」と
+    学習してこもった出力になります。
+
+    **使い方（実測にもとづく）:** 1 クリップごとの合否判定には使わないでください。実歌唱の帯域は
+    内容で大きく変わります。VocalSet 3,613 件の実測では p05 10.4k / p25 13.5k / p50 16.0k /
+    p75 22.0k / p95 22.0k Hz で、母音の伸ばしは高域が薄く、息や摩擦音は Nyquist まで届きます。
+    `min_bandwidth_hz=16000` で切ると 51% が落ちますが、これは素材の欠陥ではありません。
+
+    判定は**コーパス全体の分布**で行います。p75 や p95 が Nyquist 付近にあれば full-band、
+    分布全体が特定の周波数で頭打ちならその sample rate から上げた素材です。
 
     スペクトルをピークからの相対 dB で見て、`floor_db` を上回る最も高い帯域の周波数を返します。
     ビンをまとめて平均するのは、白色雑音のようにビン単位では暴れる信号でも安定させるためです。
@@ -87,8 +99,23 @@ def effective_bandwidth_hz(wav: np.ndarray, sr: int, *, floor_db: float = -60.0)
     w = w[np.isfinite(w)]
     if w.size < 2:
         return 0.0
-    spec = np.abs(np.fft.rfft(w * np.hanning(w.size)))
-    freqs = np.fft.rfftfreq(w.size, 1.0 / float(sr))
+
+    # 信号全長で 1 回 FFT を取ると、長さが大きな素因数を持つときに極端に遅くなります
+    # （numpy の FFT は 2 の冪から外れると遅い経路に入る）。固定長の窓へ切って平均します。
+    # 平均するとビンごとの暴れも抑えられるので、精度の面でも有利です。
+    n_fft = int(min(n_fft, w.size))
+    if n_fft < 2:
+        return 0.0
+    starts = [0] if w.size <= n_fft else list(
+        range(0, w.size - n_fft + 1, max(1, (w.size - n_fft) // max(1, max_windows - 1))))
+    starts = starts[:max_windows]
+
+    window = np.hanning(n_fft)
+    power = np.zeros(n_fft // 2 + 1)
+    for start in starts:
+        power += np.abs(np.fft.rfft(w[start:start + n_fft] * window)) ** 2
+    spec = np.sqrt(power / len(starts))
+    freqs = np.fft.rfftfreq(n_fft, 1.0 / float(sr))
 
     group = max(1, spec.size // 512)                  # 512 帯域くらいに束ねる
     usable = (spec.size // group) * group
