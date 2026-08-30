@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -83,17 +84,43 @@ def _vastai() -> str:
 
 
 def run(args: list[str], *, raw: bool = False, check: bool = True):
-    """vastai を実行。token は表示・ログしない（公式 CLI の受け口が --api-key のため argv には載る）。"""
+    """vastai を実行。token は表示・ログしない（公式 CLI の受け口が --api-key のため argv には載る）。
+
+    **出力は必ず UTF-8 で受けてから自前で表示する。** vastai の出力には非 ASCII が混ざり、
+    日本語 Windows（cp932）へ直接書かせると子プロセスが
+    `'cp932' codec can't encode character` で落ちる（`show instances` で実測）。
+    """
     key = api_key()
     cmd = [_vastai(), *args] + (["--raw"] if raw else []) + ["--api-key", key]
     print(f"$ vastai {' '.join(args)}{' --raw' if raw else ''} --api-key ***",
           file=sys.stderr)                                # token はログに残さない
-    p = subprocess.run(cmd, capture_output=raw, text=True)
+    p = subprocess.run(cmd, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace",
+                       env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+    if not raw and p.stdout:
+        _write(p.stdout)
     if check and p.returncode != 0:
-        if raw and p.stderr:
-            print(p.stderr, file=sys.stderr)
+        if p.stderr:
+            _write(p.stderr, stderr=True)
         sys.exit(f"vastai が失敗しました (exit {p.returncode})")
     return p.stdout if raw else ""
+
+
+_SECRET = re.compile(r"('|\")?(instance_api_key|api_key|ssh_key|token)\1?\s*[:=]\s*"
+                     r"('|\")?[A-Za-z0-9_\-]{16,}('|\")?")
+
+
+def _redact(text: str) -> str:
+    """出力から秘密鍵を伏せる。`create` の応答には instance_api_key が平文で入る。"""
+    return _SECRET.sub(lambda m: f"{m.group(2)}: ***", text)
+
+
+def _write(text: str, *, stderr: bool = False) -> None:
+    """cp932 で表現できない文字があっても落とさずに出す。"""
+    stream = sys.stderr if stderr else sys.stdout
+    enc = getattr(stream, "encoding", None) or "utf-8"
+    stream.write(text.encode(enc, errors="replace").decode(enc, errors="replace"))
+    stream.flush()
 
 
 def _offers(query: str, order: str, limit: int) -> list[dict]:
@@ -155,7 +182,9 @@ def cmd_create(a):
             "--label", a.label, "--onstart-cmd", onstart]
     if a.no_bootstrap:
         args = [x for x in args if x not in ("--onstart-cmd", onstart)]
-    run(args)
+    # 応答には `instance_api_key`（そのインスタンス用の秘密鍵）が入る。**表示しない。**
+    out = run(args, raw=True)
+    _write(_redact(out))
     print("\n起動後の確認:\n"
           "  uv run python tools/vast.py instances\n"
           "  uv run python tools/vast.py ssh <instance_id>\n"

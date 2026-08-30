@@ -78,14 +78,61 @@ def build_plan(args) -> list[dict]:
     return plan
 
 
-def download_gtsinger(dest: Path, langs: list[str]) -> None:
-    """HF から GTSinger の音声だけを落とす。`processed/` と注釈は要らない。"""
-    from huggingface_hub import snapshot_download
+def pick_wavs(all_files, langs: list[str], per_singer: int) -> list[str]:
+    """歌手ごとに `per_singer` 本の wav を、**技法と曲をまたいで等間隔**に選ぶ。
+
+    先頭から取ると技法がアルファベット順に偏ります（`Breathy` ばかりになる）。
+    パスは `<言語>/<歌手>/<技法>/<曲>/<Group>/NNNN.wav` の順にソートされるので、
+    等間隔に間引くと技法・曲・Group がまんべんなく混ざります。
+    """
+    by_singer: dict[tuple[str, str], list[str]] = {}
+    for f in all_files:
+        p = f.split("/")
+        if f.endswith(".wav") and len(p) > 2 and p[0] in langs:
+            by_singer.setdefault((p[0], p[1]), []).append(f)
+    picked: list[str] = []
+    for key in sorted(by_singer):
+        fs = sorted(by_singer[key])
+        if per_singer and len(fs) > per_singer:
+            step = len(fs) / per_singer
+            fs = [fs[int(i * step)] for i in range(per_singer)]
+        picked += fs
+    return picked
+
+
+def download_gtsinger(dest: Path, langs: list[str], per_singer: int) -> None:
+    """HF から GTSinger の **wav だけ**を、歌手ごとに必要な本数だけ落とす。
+
+    リポジトリは 149,037 ファイル（注釈 json / TextGrid を含む）あり、丸ごと落とすと
+    HTTP 429 で律速されて 3 時間半かかります（実測）。**使う wav だけを選んで**落とすと
+    1 桁減ります。`--max-hours` は抽出時にさらに正確に切ります。
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from huggingface_hub import HfApi, hf_hub_download
+
     dest.mkdir(parents=True, exist_ok=True)
-    patterns = [f"{lang}/**" for lang in langs]
-    print(f"[download] {GTSINGER_REPO} {langs} -> {dest}", flush=True)
-    snapshot_download(GTSINGER_REPO, repo_type="dataset", local_dir=str(dest),
-                      allow_patterns=patterns, max_workers=8)
+    api = HfApi()
+    files = api.list_repo_files(GTSINGER_REPO, repo_type="dataset")
+    picked = pick_wavs(files, langs, per_singer)
+    print(f"[download] {GTSINGER_REPO}: {len(files)} files -> {len(picked)} wav "
+          f"({len(langs)} langs, 歌手あたり {per_singer}) -> {dest}", flush=True)
+
+    def get(rel: str) -> str:
+        return hf_hub_download(GTSINGER_REPO, rel, repo_type="dataset",
+                               local_dir=str(dest))
+
+    done, t0 = 0, time.time()
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futures = {ex.submit(get, f): f for f in picked}
+        for fut in as_completed(futures):
+            try:
+                fut.result()
+            except Exception as e:                                   # noqa: BLE001
+                print(f"  [warn] {futures[fut]}: {type(e).__name__}", flush=True)
+            done += 1
+            if done % 500 == 0:
+                print(f"  {done}/{len(picked)}  {time.time() - t0:.0f}s", flush=True)
+    print(f"[download] {done} files  {(time.time() - t0) / 60:.1f} min", flush=True)
 
 
 def download_jp() -> None:
@@ -146,6 +193,9 @@ def main() -> int:
     ap.add_argument("--base-config", default="configs/svc_base_multi.yaml")
     ap.add_argument("--max-hours", type=float, default=0.75,
                     help="GTSinger の 1 歌手あたりの上限（時間）")
+    ap.add_argument("--per-singer-files", type=int, default=400,
+                    help="GTSinger を落とすときの 1 歌手あたりの wav 本数。"
+                         "1 本およそ 10 秒なので 400 本 = 約 1.1 時間ぶん")
     ap.add_argument("--jp-max-hours", type=float, default=0.0,
                     help="日本語 DB の上限（0 なら --max-hours と同じ）")
     ap.add_argument("--chunk-sec", type=float, default=8.0)
@@ -160,7 +210,7 @@ def main() -> int:
     out_root = Path(a.out) if Path(a.out).is_absolute() else ROOT / a.out
     if a.download:
         download_gtsinger(ROOT / a.gtsinger if not Path(a.gtsinger).is_absolute()
-                          else Path(a.gtsinger), a.langs)
+                          else Path(a.gtsinger), a.langs, a.per_singer_files)
         download_jp()
 
     plan = build_plan(a)

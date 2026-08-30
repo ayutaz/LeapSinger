@@ -479,3 +479,51 @@ class BuildReportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GTSingerPickWavsTests(unittest.TestCase):
+    """M3 の素材取得: 歌手ごとに wav を等間隔で選ぶ。
+
+    GTSinger のリポジトリは 149,037 ファイルあり、丸ごと落とすと HTTP 429 で律速されて
+    3 時間半かかります（実測）。使う wav だけを選んで落とします。**先頭から取ってはいけません**
+    — パスは技法名でソートされるので `Breathy` ばかりになります。
+    """
+
+    def _files(self):
+        out = ["README.md", "Japanese/JA-Soprano-1/Breathy/song/G/0000.json"]
+        for singer in ("JA-Soprano-1", "JA-Tenor-1"):
+            for tech in ("Breathy", "Vibrato", "Glissando"):
+                for i in range(10):
+                    out.append(f"Japanese/{singer}/{tech}/song{i//5}/G/{i:04d}.wav")
+        out += [f"Chinese/ZH-Alto-1/Breathy/s/G/{i:04d}.wav" for i in range(5)]
+        return out
+
+    def test_takes_only_wavs_of_the_requested_languages(self):
+        from tools.m3_corpus import pick_wavs
+        picked = pick_wavs(self._files(), ["Japanese"], 0)
+        self.assertTrue(all(p.endswith(".wav") for p in picked))
+        self.assertTrue(all(p.startswith("Japanese/") for p in picked))
+
+    def test_caps_each_singer_independently(self):
+        from tools.m3_corpus import pick_wavs
+        picked = pick_wavs(self._files(), ["Japanese"], 6)
+        per = {}
+        for p in picked:
+            per[p.split("/")[1]] = per.get(p.split("/")[1], 0) + 1
+        self.assertEqual(per, {"JA-Soprano-1": 6, "JA-Tenor-1": 6})
+
+    def test_spreads_across_techniques_instead_of_taking_the_first_ones(self):
+        from tools.m3_corpus import pick_wavs
+        picked = [p for p in pick_wavs(self._files(), ["Japanese"], 6)
+                  if "JA-Soprano-1" in p]
+        self.assertEqual({p.split("/")[2] for p in picked},
+                         {"Breathy", "Vibrato", "Glissando"}, "技法が偏っている")
+
+    def test_returns_everything_when_no_cap_is_given(self):
+        from tools.m3_corpus import pick_wavs
+        self.assertEqual(len(pick_wavs(self._files(), ["Japanese", "Chinese"], 0)), 65)
+
+    def test_is_deterministic(self):
+        from tools.m3_corpus import pick_wavs
+        self.assertEqual(pick_wavs(self._files(), ["Japanese"], 7),
+                         pick_wavs(self._files(), ["Japanese"], 7))
