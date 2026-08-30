@@ -35,7 +35,9 @@ source F0 + V/UV -> harmonic/noise excitation -> pseudo mel x0
 
 **決定:** ContentVec または HuBERT 系の事前学習済み encoder を凍結し、その出力を前処理で保存します。SVC model の学習 graph 内では SSL encoder を実行しません。
 
-**未決:** 採用モデル、層、sampling rate、stride、正規化、mel grid への resampling 方法。これらは再現性に直結するため、前処理実装時に manifest へ記録します。
+**決定:** ContentVec（`lengyue233/content-vec-best`、MIT、768 次元、layer 12）を採用し、学習には 768 から固定ランダムに選んだ 256 次元を使います。候補比較と根拠は [content encoder の選定](svc-content-encoder.md)。
+
+**未決:** mel grid への resampling 方法（SSL の 50 Hz と mel の 172.265625 Hz は整数比にならない）と、256 次元部分集合の選び方。いずれも再現性に直結するため manifest へ記録します。
 
 **リスク:** SSL feature に source timbre が残ると、target singer への変換を妨げます。pitch/formant augmentation、speaker-adversarial loss、feature retrieval、encoder/layer の比較を候補とします。
 

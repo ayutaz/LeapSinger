@@ -43,6 +43,8 @@
 ## 4. 論文
 
 - Qian et al., [ContentVec: An Improved Self-Supervised Speech Representation by Disentangling Speakers](https://proceedings.mlr.press/v162/qian22b.html), ICML 2022.
+- Zhou et al., [Simple and Effective Content Encoder for Singing Voice Conversion via Dimension Reduction](https://www.isca-archive.org/interspeech_2025/zhou25e_interspeech.pdf), Interspeech 2025 — content encoder を差し替えた同一 baseline 比較。次元削減の効果と離散トークンの out-of-domain 崩壊。
+- [The Singing Voice Conversion Challenge 2025](https://arxiv.org/pdf/2509.15629) — 参加システムの表現選択。
 - Wei et al., [RMVPE: A Robust Model for Vocal Pitch Estimation in Polyphonic Music](https://www.isca-archive.org/interspeech_2023/wei23b_interspeech.html), Interspeech 2023.
 - Plachta et al., [Seed-VC: High-Quality Zero-shot Voice Conversion and Singing Voice Conversion](https://arxiv.org/abs/2411.09943), 2024.
 - [DAFMSVC](https://arxiv.org/abs/2508.05978) — flow-matching SVC の先行例。
