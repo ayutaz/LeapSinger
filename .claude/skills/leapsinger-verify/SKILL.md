@@ -40,6 +40,7 @@ uv run python tools/smoke/run_smoke.py --keep                # 失敗調査用�
 | `svc-infer` / `svs-infer` | checkpoint 復元、mel 生成、NHVSing ONNX、WAV 出力 |
 | `preprocess` | librosa.load、RMVPE、phrase 分割、shard 契約 |
 | `export` | torch.onnx.export、onnxsim、fp16 変換、ORT parity |
+| `unittest` | 単体テスト全件（`test_*.py` を自動収集。統合テストは既定 skip） |
 
 ## 結果の扱い
 

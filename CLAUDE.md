@@ -120,7 +120,12 @@ data/<db>/svc_shard.npz     # <name>|content [T,C] / |f0_interp [T] / |uv [T] / 
 | `loudness.py` | フレーム log-RMS（**mel とフレーム数が一致**）と dataset 統計での正規化 |
 | `audit.py` / `coverage.py` / `split.py` / `report.py` | M0 の素材検査・音域と技法の集計・group 単位 split |
 
-**未実装:** `build_shard`（cache -> `svc_shard.npz`）と、ContentVec / RMVPE を呼ぶ 1 段目です。抽出は 2 段構成にします（1 段目が重い特徴を cache へ、2 段目が整列・正規化・次元削減）。補間方法と 256 次元 seed の ablation を 2 段目の再実行だけで回せるようにするためです。
+| `chunk.py` | 長い曲を固定長の phrase へ切る。**有声率が `--min-voiced` 未満の chunk は捨てる**（イントロが丸ごと無声になるため。実測で 89 phrase 中 35 件が該当） |
+| `extract.py` / `encoders.py` | 1 段目。ContentVec と RMVPE を**引数で受け取り**、`{content, f0_hz, uv, loudness, mel}` を返す |
+| `shard.py` | 2 段目。整列・部分集合・正規化を当てて `svc_shard.npz` を書く。`features_to_item()` は推論側に同じ正規化を当てる |
+| `run.py` | CLI。`--from-cache` で 2 段目だけ再実行できる |
+
+**確認済み:** WAV から shard までコマンド 1 本で作れ、再実行で **bit 一致**します（`np.savez` は zip にタイムスタンプを埋めるので自前で決定的に書いています）。
 
 manifest には encoder の model revision と層、sample rate、hop、**SSL の stride と補間方法**、正規化、**256 次元の index と seed**、loudness の定義、F0 extractor version、入力 WAV の checksum を記録します。
 

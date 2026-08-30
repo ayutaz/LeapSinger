@@ -15,8 +15,9 @@ uv sync --extra ops        # vastai CLI が入る
 ```
 
 API token は `.env`（`.gitignore` 対象）に置く。`tools/vast.py` が
-`VAST_API_KEY` / `VASTAI_API_KEY` / `VAST_AI_API_KEY` / `VAST_TOKEN` / `VASTAI_TOKEN` の
-どれかを自動で拾う。**token を表示・コピー・コミットしない。**
+`VASTAI` / `VAST` / `VAST_API_KEY` / `VASTAI_API_KEY` / `VAST_AI_API_KEY` / `VAST_TOKEN` /
+`VASTAI_TOKEN` のどれかを自動で拾う。**token を表示・コピー・コミットしない。**
+見つからないときは `.env` にある**変数名だけ**（値は出さず）を表示して止まる。
 
 ## 1. 借りる前に手元で済ませる
 
@@ -47,12 +48,51 @@ target fine-tune は 16 GB、multi-singer base は 24 GB が基準。
 uv run python tools/vast.py create <offer_id> --disk 60 --yes
 ```
 
-- `--yes` が無ければ実行されず、料金（$/hr、24h、週）の概算だけ出る。**まず --yes 無しで確認する。**
+- `--yes` が無ければ実行されない。ただし**料金プレビューは当てにならない**（3b 節。`id=` 検索が
+  空を返す）。**検索一覧に出ている `$/hr` を価格の根拠にする。**
 - 既定イメージは `vastai/base-image:cuda-13.0.3-auto`（ホスト CUDA 13.0 系＝cu130 wheel と一致、
   gcc 入りなので Linux では `torch.compile` が効く）。
 - `--rmvpe` を付けると前処理用の RMVPE 重み（181 MB）も落とす。
 - onstart で `tools/vast_bootstrap.sh` が走る。uv 導入 → clone → `uv sync` → CUDA 疎通 →
   **倍音和の compile 経路が効いているかの確認** → 単体テスト、まで自動。
+
+## 3b. 実運用で分かったこと（2026-08-30、M2 で一通り回した）
+
+**確認済み:** 次はすべて実際に踏んだものです。
+
+| 事象 | 対処 |
+|---|---|
+| `vastai execute <id> '<cmd>'` は**制限付き**で、任意コマンドは `Invalid command given` (400) | **SSH を使う。** `execute` は当てにしない |
+| SSH には**鍵の登録**が要る | `vastai show ssh-keys` で確認。無ければ `vastai create ssh-key`。`~/.ssh/id_ed25519_vast` が登録済みだった |
+| `vastai destroy instance` は確認プロンプトを出し、stdin が無いと `Aborted.` | `-y` が要る。`tools/vast.py` が渡すようにした |
+| `search offers 'id=<N>'` が、その offer が実在しても**空を返す** | `create` の料金プレビューは当てにならない。**一覧に出ている価格を見る** |
+| offer ID の**回転が速い** | 検索してすぐ作る。数分置くと消える |
+| インスタンスの `logs` には bootstrap の出力が出ない | onstart は `/root/bootstrap.log` へ落としてある。SSH で見る |
+| アカウントに**自分が作っていないインスタンス**が居ることがある | `label` と `image` で見分ける。**自分のもの以外は触らない** |
+
+**接続:**
+
+```bash
+uv run python tools/vast.py instances          # ssh_host / ssh_port を控える
+ssh -i ~/.ssh/id_ed25519_vast -p <port> -o BatchMode=yes root@<host>
+ssh -i ~/.ssh/id_ed25519_vast -p <port> root@<host> 'bash -s' < local_script.sh
+scp -i ~/.ssh/id_ed25519_vast -P <port> root@<host>:/root/LeapSinger/log/... .
+```
+
+**データはインスタンス上で作る。** 転送するより速く、M1 が Linux でも動くことの確認になります。
+回線が速い offer を選べば、素材のダウンロードは数十秒で終わります。
+
+```bash
+# インスタンス上で
+git fetch origin feature/svc && git reset --hard origin/feature/svc   # 手元の push を反映
+uv run python preprocess/download_scripts/download_ritsu.py --voice kire
+uv run python -m preprocess.svc.run --wav-dir download/ritsu --out data/x --device cuda
+```
+
+**実測（RTX A4000 / $0.098 per hour）:** M1 抽出が 1 曲 42 秒、SVC の overfit 学習が
+**13〜15 step/s**、M2 一式で 27 分・**実費およそ $0.04**。bootstrap では
+`compiled path active: True` / `harmonic_wave 1.6 ms/call` になり、Windows で使えなかった
+`torch.compile` 経路が効きます。
 
 ## 4. 接続して確認する
 
@@ -89,10 +129,13 @@ uv run python tools/smoke/run_smoke.py
 `uv.lock`、`nvidia-smi` の出力、生成サンプル。
 
 ```bash
-uv run python tools/vast.py scp-url <instance_id>   # 転送先の URL を得る
+scp -i ~/.ssh/id_ed25519_vast -P <port> -r root@<host>:/root/LeapSinger/log/<run>/. ./out/
 ```
 
 学習中も定期的に退避する。インスタンスは落ちることがある。
+
+**M2 で実際に回収したもの:** 生成 WAV 2 本（予測と ground-truth mel 経由）、`m2_report.json`、
+TensorBoard の events、shard の `manifest.json`。checkpoint は 141 MB あるので、必要なものだけ選ぶ。
 
 ## 7. 破棄する
 

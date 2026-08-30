@@ -22,6 +22,13 @@
 | [`preprocess/svc/coverage.py`](../preprocess/svc/coverage.py) | 実装済み | M0: 音域帯の滞在時間、percentile、ラベル別滞在時間 |
 | [`preprocess/svc/split.py`](../preprocess/svc/split.py) | 実装済み | M0: group 単位 split（層化対応） |
 | [`preprocess/svc/report.py`](../preprocess/svc/report.py) | 実装済み | M0: 検査 → coverage → split を 1 度に出す |
+| [`preprocess/svc/chunk.py`](../preprocess/svc/chunk.py) | 実装済み | M1: 曲を固定長 phrase へ。**無声のみの chunk を除外** |
+| [`preprocess/svc/extract.py`](../preprocess/svc/extract.py) | 実装済み | M1 の 1 段目。encoder と F0 抽出器は引数で受け取る |
+| [`preprocess/svc/encoders.py`](../preprocess/svc/encoders.py) | 実装済み | ContentVec / RMVPE の薄い adapter。ここだけが重いモデルに触れる |
+| [`preprocess/svc/shard.py`](../preprocess/svc/shard.py) | 実装済み | M1 の 2 段目。`svc_shard.npz` を**決定的に**書く。`features_to_item()` |
+| [`preprocess/svc/run.py`](../preprocess/svc/run.py) | 実装済み | M1 の CLI。`--from-cache` で 2 段目だけ再実行 |
+| [`tools/m2_verify.py`](../tools/m2_verify.py) | 追加済み | M2 の検証（長さ・F0 追従・V/UV・再現性を測る） |
+| [`test_svc_preprocess_integration.py`](../test_svc_preprocess_integration.py) | 追加済み | 実モデルを使う統合テスト（既定 skip） |
 | [`test_svc_preprocess.py`](../test_svc_preprocess.py) | 追加済み | align / subset / loudness の契約テスト（32 件） |
 | [`test_svc_dataset.py`](../test_svc_dataset.py) | 追加済み | audit / coverage / split / report の契約テスト（58 件） |
 | [`tools/smoke/`](../tools/smoke/) | 追加済み | 全経路の疎通を 1 コマンドで回す（11 ステージ） |
@@ -135,7 +142,8 @@ Python 3.13 / torch 2.13 / librosa 1.0 へ更新した後、次を上記環境�
 
 ### 確認済み
 
-- 自動テスト **100 件**が成功（`test_svc_model` 10 / `test_svc_preprocess` 32 / `test_svc_dataset` 58）。
+- 自動テスト **141 件**が成功（`test_svc_model` 10 / `test_svc_preprocess` 73 / `test_svc_dataset` 58）。重いモデルもネットワークも使いません。実モデルの統合テストは 4 件で、`LEAPSINGER_INTEGRATION=1` のときだけ走ります。
+- コマンド guard の回帰テスト **37 件**（`tools/hooks/test_guard.py`）。
 - **実音声 5 コーパスへの検査・coverage・split**（M0。下記「M0 の実データ検証」）。
 - padding された frame が有効 frame に影響しないこと。
 - feature width / frame alignment の不正入力を拒否すること。
@@ -166,6 +174,28 @@ Python 3.13 / torch 2.13 / librosa 1.0 へ更新した後、次を上記環境�
 技法ラベルの表記ゆれ、帯域閾値の誤り、FFT の性能、曲名正規化しないことによる leakage、
 無音閾値が曲全体に合わないこと、音域に関する推測の誤りなど）。**いずれも合成データでは
 出ませんでした。**
+
+### M1 / M2 の実証（2026-08-30）
+
+**確認済み:** WAV から shard を作り、実音声で overfit して WAV を出すところまで通しました。
+学習は vast.ai の RTX A4000（$0.098/hr、M2 一式で 27 分・実費およそ $0.04）で行っています。
+
+| 項目 | 実測 |
+|---|---|
+| M1 抽出 | 波音リツ 1 曲を 3 秒 chunk で 42 秒。89 chunk 中 **39 件を無声で除外**、50 phrase を採用 |
+| M1 再現性 | 同じ cache から作り直して **sha256 が bit 一致**。seed を変えると変わる（ablation が回る） |
+| M2 学習 | 2 phrase を 3,000 step。**13〜15 step/s**。flow 0.00710 → 0.00235、recon 0.03573 → 0.01889 |
+| M2 出力 | `m2_pred.wav` 3.00 秒 / 44.1 kHz / peak 0.950 |
+| M2 F0 追従 | 相関 **0.9991**、中央値 **0.012 半音**、p90 0.075 半音、V/UV 一致 0.988 |
+| M2 再現性 | 決定的モードで **bit 一致**（max diff 0.0） |
+| 切り分け | ground-truth mel 経由の WAV は F0 相関 0.9990 / 0.012 半音。**予測側とほぼ同等** |
+
+**確認済み:** Linux では `compiled path active: True`（`harmonic_wave` 1.6 ms/call）で、
+Windows で使えなかった `torch.compile` 経路が効きます。
+
+**この過程で見つかった欠陥 2 件**（[実行計画](svc-plan.md) M2 の進捗節に詳細）:
+無声だけの phrase が学習に入っていたこと、CUDA 推論が既定では bit 再現しないこと。
+いずれも合成データでは出ません。
 
 ### 制限付き
 

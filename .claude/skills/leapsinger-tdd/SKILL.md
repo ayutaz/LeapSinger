@@ -10,11 +10,19 @@ description: このリポジトリで実装を書くときの TDD の当て方�
 ## 1. テストの置き場と実行
 
 ```bash
-uv run python -m unittest test_svc_model -v                  # SVC 関連
+uv run python -m unittest test_svc_model test_svc_preprocess test_svc_dataset -v   # 単体 141 件
 uv run python -m unittest test_svc_model.HarmonicSVCModelTests.test_single_item_inference_contract
-uv run python tools/hooks/test_guard.py                      # hook の回帰
+uv run python tools/hooks/test_guard.py                      # hook の回帰 37 件
+LEAPSINGER_INTEGRATION=1 uv run python -m unittest test_svc_preprocess_integration   # 実モデル
 uv run python tools/smoke/run_smoke.py                       # 全経路（実装後の確認であってテストではない）
 ```
+
+| ファイル | 範囲 |
+|---|---|
+| `test_svc_model.py` | モデル・loader・配線 |
+| `test_svc_preprocess.py` | 整列 / 部分集合 / loudness / shard / 抽出 / chunk（M1） |
+| `test_svc_dataset.py` | 検査 / coverage / split / report（M0） |
+| `test_svc_preprocess_integration.py` | **実 ContentVec / RMVPE。既定 skip**、`LEAPSINGER_INTEGRATION=1` で走る |
 
 - top-level の `test_<領域>.py` に置く。`unittest discover` は top-level の `test_*.py` しか拾わないので、
   新しい領域を足したら**その名前を [CLAUDE.md](../../../CLAUDE.md) のテスト節に追記する**（さもないと誰も走らせない）。
@@ -68,3 +76,4 @@ GPU も同じです。単体テストは CPU で通ること。`torch.cuda.is_av
 - [ ] 新しい `test_*.py` を [CLAUDE.md](../../../CLAUDE.md) のテスト節に追記した
 - [ ] `uv run python tools/smoke/run_smoke.py` が通る（既存経路を壊していない）
 - [ ] 実装で分かった落とし穴を CLAUDE.md の「既知の落とし穴」へ書いた
+- [ ] **学習を伴う検証は vast.ai で行った**（手元では hook が止める。[vast-instance](../vast-instance/SKILL.md)）

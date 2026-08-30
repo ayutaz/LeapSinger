@@ -46,6 +46,8 @@ ls log/                      # 既存の run を必ず確認してから決め�
 | `pitch_aug: true`（SVC） | `train.py` が SystemExit する。augmentation は特徴抽出の前に行う |
 | `data.eval_songs`（曲が 1 つだけ） | `n_hold = min(eval_songs, 曲数-1)` で eval が空になる。評価は自動で飛ぶ |
 | `--init_from` で SVS → SVC | 同一構造前提。arch をまたぐ部分ロードは未実装 |
+| CUDA 推論の再現性 | **既定では bit 再現しない。** RNG ではなく conv/matmul の非決定性（実測 ln-mel で max 7.95e-02）。`torch.use_deterministic_algorithms(True)` + `CUBLAS_WORKSPACE_CONFIG=:4096:8` で bit 一致する（CPU は既定で一致） |
+| 無声だけの phrase | 曲を固定長で切るとイントロが丸ごと無声になる（実測 89 中 35 件）。**学習に入れると「無音を出す」ことを学ぶ。** `preprocess.svc.run --min-voiced` で除外する |
 
 ## 3. 走らせる — **手元では回さない（CPU も含めて）**
 

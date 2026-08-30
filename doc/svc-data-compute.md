@@ -147,6 +147,12 @@ gan.enabled: false
 | RTX 4090 | 数時間程度の可能性 |
 | A100 / H100 | PoC には過剰だが大規模 pretraining を短縮可能 |
 
+**確認済み（2026-08-30 実測）:** vast.ai の **RTX A4000 16 GB（$0.098/hr）** で、SVC の overfit
+（2 phrase・各 3 秒・content_dim 256・hidden 256）が **13〜15 step/s** でした。M1 の抽出は
+1 曲（3 秒 chunk × 50 phrase）で 42 秒です。M2 一式（素材取得・抽出・3,000 step 学習・検証）で
+**27 分・実費およそ $0.04** でした。**これは overfit の規模なので、本学習の見積もりには使えません。**
+M3 で base を回すときに、同じ手順で examples/sec と peak VRAM を測り直します。
+
 計画値として固定せず、最初の 100 / 1,000 update で examples/sec、frames/sec、peak VRAM、checkpoint size、validation time を計測して再見積もりします。
 
 ## 9. 保存すべきデータ台帳

@@ -33,7 +33,7 @@ source F0 + V/UV -> harmonic/noise excitation -> pseudo mel x0
 
 ### Content
 
-**決定:** ContentVec または HuBERT 系の事前学習済み encoder を凍結し、その出力を前処理で保存します。SVC model の学習 graph 内では SSL encoder を実行しません。
+**確認済み（実装済み）:** ContentVec を凍結して前処理で出力を保存します。SVC model の学習 graph 内では SSL encoder を実行しません。抽出は [`preprocess/svc/`](../preprocess/svc/) の 2 段構成で、1 段目（`extract.py` / `encoders.py`）が ContentVec と RMVPE を回して cache へ、2 段目（`shard.py`）が整列・部分集合・正規化を当てて `svc_shard.npz` を書きます。**encoder と F0 抽出器は引数で受け取る**ので、単体テストは重いモデルを使いません。
 
 **決定:** ContentVec（`lengyue233/content-vec-best`、MIT、768 次元、layer 12）を採用し、学習には 768 から固定ランダムに選んだ 256 次元を使います。候補比較と根拠は [content encoder の選定](svc-content-encoder.md)。
 

@@ -177,10 +177,13 @@ def st_export(w: Path, dev: str) -> str:
 
 
 def st_unittest(w: Path, dev: str) -> str:
-    out = sh([PY, "-m", "unittest", "test_svc_model"])
+    # 重いモデルを使わない単体テストを全部。統合テスト（実 ContentVec / RMVPE）は
+    # LEAPSINGER_INTEGRATION=1 のときだけ走るので、ここでは自動的に skip される。
+    files = sorted(p.stem for p in ROOT.glob("test_*.py") if "integration" not in p.stem)
+    out = sh([PY, "-m", "unittest", *files])
     need(out, "OK", "unittest")
     m = re.search(r"Ran (\d+) tests", out)
-    return f"{m.group(1) if m else '?'} tests OK"
+    return f"{m.group(1) if m else '?'} tests OK ({len(files)} files)"
 
 
 STAGES = [
