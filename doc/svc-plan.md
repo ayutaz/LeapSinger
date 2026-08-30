@@ -19,7 +19,9 @@
 
 ## 1. 現在地
 
-**確認済み:** M0〜M6 のいずれも未完了です。到達しているのは前提条件にあたる実装と合成テンソル検証までで、これは完了レベル 1〜2 に相当します。
+**確認済み:** **M0 は入手可能な素材について完了**、**M1 は着手中**、M2 以降は未着手です。
+[svc.md](svc.md) の完了レベルは 1〜2 のままです（レベル 3 は「実音声の shard で学習して WAV を出す」ことを要求し、
+そこはまだ到達していません）。
 
 | 状態 | 内容 |
 |---|---|
@@ -31,7 +33,7 @@
 | 済 | content encoder・F0 extractor・loudness 正規化・補間方法・部分集合 seed の決定（[content encoder の選定](svc-content-encoder.md)） |
 | 済 | **M0 完了**（入手可能な素材について）。5 コーパスの取得・検査・coverage・split と台帳（[データセット台帳](svc-dataset-ledger.md)） |
 | 済 | M1 の一部。`align` / `subset` / `loudness` を TDD で実装（32 テスト） |
-| 未 | 実音声を 1 度も通していない。WAV も 1 本も出していない |
+| 未 | **実音声を SVC モデルに通していない。WAV も 1 本も出していない。** 実音声に対して行ったのは M0 の検査・音域/技法の集計・split までです |
 
 **決定:** 実音声を通していない段階では、品質・速度に関する対外的な主張を行いません。
 
@@ -39,8 +41,8 @@
 
 | ID | 名前 | 一言でいう目的 | 完了の判定材料 |
 |---|---|---|---|
-| **M0** | データ確定 | 学習してよい素材を法的・品質的に固定する | dataset ledger と split list |
-| **M1** | 特徴抽出前処理 | WAV から `svc_shard.npz` を再現可能に作る | 先に書いた失敗するテスト、再実行で一致する shard と manifest |
+| **M0** ✅ | データ確定 | 学習してよい素材を法的・品質的に固定する | dataset ledger と split list |
+| **M1** 🔨 | 特徴抽出前処理 | WAV から `svc_shard.npz` を再現可能に作る | 先に書いた失敗するテスト、再実行で一致する shard と manifest |
 | **M2** | 実音声 smoke | 配線が実音声で成立することを示す | overfit した phrase の WAV |
 | **M3** | multi-singer base | 話者に依存しない変換器の土台を作る | 未知 source singer で崩れない base ckpt |
 | **M4** | target fine-tune | target singer の音色を再現する | offline teacher ckpt と指標一式 |
