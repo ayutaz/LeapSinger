@@ -21,7 +21,7 @@ from leapsinger.mel import wav_to_mel_nhv
 from preprocess.svc.align import align_left
 from preprocess.svc.chunk import chunk_spans
 from preprocess.svc.extract import extract_phrase
-from preprocess.svc.shard import build_shard
+from preprocess.svc.shard import build_shard, features_to_item
 from preprocess.svc.loudness import dataset_stats, frame_log_rms, normalize_with_stats
 from preprocess.svc.subset import apply_subset, subset_indices
 
@@ -538,6 +538,86 @@ class ChunkSpansTests(unittest.TestCase):
     def test_rejects_a_minimum_longer_than_the_chunk(self):
         with self.assertRaises(ValueError):
             chunk_spans(self.SR * 10, self.SR, chunk_sec=1.0, min_sec=2.0)
+
+
+class FeaturesToItemTests(unittest.TestCase):
+    """1 段目の出力 + manifest -> `infer_svc_mel` に渡せる item。
+
+    実行計画 M2 ゴール 5「学習時と推論時で特徴量の正規化が同一である」を**構造で保証する**
+    ための関数です。学習は shard を読むので正規化済みですが、新しい source WAV から推論する
+    ときは manifest に記録した統計と部分集合を同じように当てる必要があります。
+    それを人手に任せると必ずずれます。
+    """
+
+    SR, HOP, N_MELS = 44100, 256, 128
+    C_IN, N_DIMS = 64, 16
+    FR = SR / HOP
+
+    def setUp(self):
+        self.out = Path(tempfile.mkdtemp(prefix="fti_"))
+        self.addCleanup(shutil.rmtree, self.out, ignore_errors=True)
+
+    def _features(self, t_mel, seed=0):
+        r = np.random.default_rng(seed)
+        t_ssl = max(1, round(t_mel * 50.0 / self.FR))
+        return {
+            "content": r.standard_normal((t_ssl, self.C_IN)).astype(np.float32),
+            "f0_hz": (220.0 + 10 * r.standard_normal(t_mel)).astype(np.float32),
+            "uv": (r.random(t_mel) > 0.3).astype(np.float32),
+            "loudness": (-3.0 + r.standard_normal(t_mel)).astype(np.float32),
+            "mel": r.standard_normal((self.N_MELS, t_mel)).astype(np.float32) - 5.0,
+        }
+
+    def _built(self):
+        phrases = {"songA_0000": self._features(206, 0), "songA_0001": self._features(258, 1)}
+        manifest = build_shard(phrases, self.out, n_dims=self.N_DIMS, subset_seed=0,
+                               frame_rate=self.FR)
+        return phrases, manifest
+
+    def test_reproduces_exactly_what_the_shard_holds(self):
+        # これが本題。同じ特徴から作った item が、shard の中身と 1 bit も違わないこと。
+        phrases, manifest = self._built()
+        z = np.load(self.out / "svc_shard.npz")
+        for name, feats in phrases.items():
+            item = features_to_item(feats, manifest)
+            self.assertTrue(np.array_equal(item["content"], z[f"{name}|content"]), name)
+            self.assertTrue(np.array_equal(item["loudness"], z[f"{name}|loudness"]), name)
+            self.assertTrue(np.array_equal(item["uv"], z[f"{name}|uv"]), name)
+
+    def test_converts_f0_to_log2(self):
+        # loader (svc_dataset) が f0_logf0 を渡すので、推論側も同じ表現にする。
+        feats = self._features(206)
+        _, manifest = self._built()
+        item = features_to_item(feats, manifest)
+        self.assertTrue(np.allclose(item["f0_logf0"],
+                                    np.log2(np.maximum(feats["f0_hz"], 1.0)), atol=1e-6))
+
+    def test_returns_the_keys_infer_svc_mel_needs(self):
+        feats = self._features(206)
+        _, manifest = self._built()
+        item = features_to_item(feats, manifest)
+        for key in ("content", "f0_logf0", "uv", "loudness"):
+            self.assertIn(key, item)
+
+    def test_content_is_aligned_and_reduced(self):
+        feats = self._features(206)
+        _, manifest = self._built()
+        item = features_to_item(feats, manifest)
+        self.assertEqual(item["content"].shape, (feats["mel"].shape[1], self.N_DIMS))
+
+    def test_rejects_a_manifest_whose_indices_do_not_fit_the_content(self):
+        feats = self._features(206)
+        _, manifest = self._built()
+        manifest = {**manifest, "content_dim_in": self.C_IN + 8}
+        with self.assertRaises(ValueError):
+            features_to_item(feats, manifest)
+
+    def test_rejects_a_manifest_missing_the_normalisation(self):
+        feats = self._features(206)
+        _, manifest = self._built()
+        broken = {k: v for k, v in manifest.items() if k != "loudness_mean"}
+        with self.assertRaises(ValueError):
+            features_to_item(feats, broken)
 
 
 if __name__ == "__main__":

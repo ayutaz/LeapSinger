@@ -59,6 +59,27 @@ def run(cmd: str) -> int:
     return p.returncode
 
 
+def check_local_gpu_training() -> int:
+    """Windows で --device cuda の学習を止める（学習は vast.ai で行うと決めている）。
+
+    Linux（= vast.ai インスタンス）では止めない。同じリポジトリを両方で使うため。
+    """
+    bad = 0
+    win = sys.platform == "win32"
+    cases = [
+        ("uv run python -m train --config c.yaml --run_name a --device cuda", 2 if win else 0),
+        ("uv run python -m train --config c.yaml --run_name a --device cpu", 0),
+        ("uv run python -m train --config c.yaml --run_name a", 0),
+        ("uv run python -m train --config c.yaml --run_name a --device cuda  # guard:allow", 0),
+        ("uv run python tools/smoke/run_smoke.py --device cuda", 0),   # 疎通確認は別
+    ]
+    for cmd, want in cases:
+        if run(cmd) != want:
+            print(f"NG ローカル GPU 学習チェック (want {want}): {cmd}")
+            bad += 1
+    return bad
+
+
 def main() -> int:
     bad = 0
     for cmd in BLOCK:
@@ -89,7 +110,8 @@ def main() -> int:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    total = len(BLOCK) + len(ALLOW) + 3
+    bad += check_local_gpu_training()
+    total = len(BLOCK) + len(ALLOW) + 3 + 5
     print(f"{total - bad}/{total} 一致" + ("" if bad else "  （すべて期待どおり）"))
     return bad
 

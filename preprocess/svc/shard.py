@@ -135,3 +135,40 @@ def build_shard(phrases: Mapping[str, Mapping[str, Any]], out_dir, *,
     (out_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     return manifest
+
+
+def features_to_item(features: Mapping[str, Any],
+                     manifest: Mapping[str, Any]) -> dict[str, np.ndarray]:
+    """1 段目の出力 + manifest -> `infer_svc_mel` に渡せる item。
+
+    学習は shard を読むので正規化済みですが、**新しい source WAV から推論するときは
+    manifest に記録した統計と部分集合を同じように当てる必要があります。**
+    それを人手に任せると必ずずれるので、`build_shard` と同じ手順をここに閉じ込めます
+    （[実行計画](../../doc/svc-plan.md) M2 ゴール 5）。
+
+    同じ特徴と manifest を与えれば、shard に入っている値と **1 bit も違いません**。
+    """
+    for key in ("subset_indices", "loudness_mean", "loudness_std", "content_dim_in"):
+        if key not in manifest:
+            raise ValueError(f"manifest に {key} がありません。shard を作った manifest.json を渡してください")
+
+    content = np.asarray(features["content"], dtype=np.float32)
+    if content.ndim != 2:
+        raise ValueError(f"content は [T_ssl, C] であること; got {content.shape}")
+    if int(content.shape[1]) != int(manifest["content_dim_in"]):
+        raise ValueError(f"content の幅が manifest と違います "
+                         f"({content.shape[1]} != {manifest['content_dim_in']})")
+
+    frames = (int(np.asarray(features["mel"]).shape[1]) if "mel" in features
+              else int(np.asarray(features["f0_hz"]).shape[0]))
+    aligned = align_left(content, frames)
+    indices = np.asarray(manifest["subset_indices"], dtype=np.int64)
+    f0_hz = np.asarray(features["f0_hz"], dtype=np.float32)
+    return {
+        "content": apply_subset(aligned, indices).astype(np.float32),
+        # loader (svc_dataset) が f0_logf0 を渡すので、推論側も同じ表現にする。
+        "f0_logf0": np.log2(np.maximum(f0_hz, 1.0)).astype(np.float32),
+        "uv": np.asarray(features["uv"], dtype=np.float32),
+        "loudness": normalize_with_stats(np.asarray(features["loudness"]),
+                                         manifest["loudness_mean"], manifest["loudness_std"]),
+    }

@@ -11,7 +11,7 @@ mel:
   fmax: 16000.0
 model:
   arch: svc
-  content_dim: 768
+  content_dim: 256          # ContentVec 768 から固定ランダムに選んだ部分集合（doc/svc-content-encoder.md）
   content_layers: 2
   content_dropout: 0.1
   hidden: 256

@@ -81,6 +81,27 @@ def check_train(cmd: str) -> tuple[str, str] | None:
     return None
 
 
+def check_local_gpu_training(cmd: str) -> tuple[str, str] | None:
+    """手元の Windows 機で GPU 学習を始めようとしていないか。
+
+    **決定:** 学習は vast.ai の Linux インスタンスで行い、手元の Windows 機は開発・推論・
+    検証に使う（doc/svc-plan.md、doc/svc-data-compute.md）。ローカルで回すと、
+    (1) 実験記録の環境が本番と食い違う、(2) 他の作業と GPU を取り合って
+    "unspecified launch failure" のような一過性の失敗を起こす。実際に起きた。
+
+    Linux では止めない。同じリポジトリを vast.ai 側でも使うため。
+    """
+    if sys.platform != "win32":
+        return None
+    if not re.search(r"-m\s+train(?![\w.])|train\.py", cmd):
+        return None
+    if not re.search(r"--device[=\s]+cuda", cmd):
+        return None
+    return ("手元の Windows 機での GPU 学習は行わない決定になっている",
+            "vast.ai のインスタンスで実行する（`uv run python tools/vast.py search` -> "
+            "`create` -> `tools/vast_bootstrap.sh`）。手元で動かすなら `--device cpu`")
+
+
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
@@ -90,13 +111,14 @@ def main() -> int:
     if not cmd or ALLOW_MARK in cmd:
         return 0
 
-    hit = check_train(cmd)
-    if hit:
-        why, instead = hit
-        print(f"このコマンドは意図どおりに動きません。\n"
-              f"  理由: {why}\n"
-              f"  代わりに: {instead}", file=sys.stderr)
-        return 2
+    for check in (check_local_gpu_training, check_train):
+        hit = check(cmd)
+        if hit:
+            why, instead = hit
+            print(f"このコマンドは止めました。\n"
+                  f"  理由: {why}\n"
+                  f"  代わりに: {instead}", file=sys.stderr)
+            return 2
 
     for pattern, why, instead in RULES:
         m = re.search(pattern, cmd, re.IGNORECASE)

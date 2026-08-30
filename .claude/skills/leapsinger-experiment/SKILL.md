@@ -47,7 +47,14 @@ ls log/                      # 既存の run を必ず確認してから決め�
 | `data.eval_songs`（曲が 1 つだけ） | `n_hold = min(eval_songs, 曲数-1)` で eval が空になる。評価は自動で飛ぶ |
 | `--init_from` で SVS → SVC | 同一構造前提。arch をまたぐ部分ロードは未実装 |
 
-## 3. 走らせる
+## 3. 走らせる — **手元の GPU では回さない**
+
+**決定:** 学習は vast.ai の Linux インスタンスで行い、手元の Windows 機は開発・推論・検証に使います。
+手元で `--device cuda` の学習を始めると hook が止めます（`check_local_gpu_training`）。
+理由は 2 つあります。実験記録の環境が本番と食い違うこと、そして他の作業と GPU を取り合って
+`unspecified launch failure` のような一過性の失敗を起こすこと（実際に起きました）。
+GPU が要るときは [vast-instance](../vast-instance/SKILL.md) に従ってインスタンスを用意します。
+
 
 ```bash
 uv run python -m train --config <config> \
