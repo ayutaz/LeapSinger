@@ -120,6 +120,28 @@ TensorBoard の events、**話者 25 分の `manifest.json` / `metadata.json`**�
 選定）、抽出と学習のログ、検証の JSON と WAV、`nvidia-smi` の出力。**インスタンスのディスクは
 破棄で消えるので、`destroy` の前に必ず回収する。**
 
+## 6b. 推論の条件を学習と揃える（M3 で外した）
+
+**学習（`preprocess.svc.run`）は生の音量のまま特徴を取ります。** 推論側で波形を加工すると、
+`features_to_item()` の保証の**外側**で条件がずれます。実際に検証ツールが入力を peak 0.95 へ
+正規化しており、波音リツ DB（peak 0.107）では**実質 19 dB の増幅**になって loudness 条件が
+学習分布の 1.2σ 外へ出ていました。モデルは低域を持ち上げ高域を削り、spectral centroid が
+620 → 368 Hz に落ちます。
+
+- 推論の前に **loudness の正規化後の値**を学習分布（manifest の `loudness_mean` / `loudness_std`）と
+  突き合わせる。±1σ を大きく外れていたら入力の扱いを疑う。
+- **resample 以外の加工をしない。** 試聴用に音量を揃えるのは、特徴抽出の後で。
+
+## 6c. 内容指標だけで判断しない
+
+**content cos / F0 相関 / V/UV は高域の欠落を検知しません。** 上の不具合で centroid が
+620 → 368 Hz に落ちても content cos は 0.8217 → 0.8096 しか動きませんでした。
+[`tools/audio_metrics.py`](../../../tools/audio_metrics.py) の spectral centroid と帯域比を
+併せて見ること。基準は source ではなく **「GT mel をボコーダーに通した再合成」（上限）**です。
+
+**そして人に聴いてもらうこと。** この 2 件は利用者の「音がこもっている」という一言から
+見つかりました。指標が揃って良いことを「問題なし」の根拠にしないでください。
+
 ## 7. 主張の範囲を守る
 
 結果を書くときは [`doc/svc-prior-art-license.md`](../../../doc/svc-prior-art-license.md) 6 節の規則に従う。

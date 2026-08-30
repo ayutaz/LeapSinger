@@ -42,7 +42,9 @@ uv run python tools/vast.py search --vram 24 --max-price 0.60
 `cuda_max_good >= 13.0`（cu130 wheel を使うため）/ `disk_space >= 60` / 安い順。
 
 VRAM の目安は [`doc/svc-data-compute.md`](../../../doc/svc-data-compute.md)。
-target fine-tune は 16 GB、multi-singer base は 24 GB が基準。
+**ただしその表は計画値です。** multi-singer base の実測 peak は **1.95 GB** で、
+24 GB 級は要りませんでした（3 節）。`max_batch_size` を上げる・GAN を足す・crop を伸ばす
+ときだけ大きい VRAM が要ります。**まず実測を見て、無ければ小さめで試す。**
 
 **ディスクは 40 GB 以上。** torch cu130 + nvidia 系 wheel だけで 8 GB 前後を使う。
 
@@ -85,7 +87,7 @@ uv run python tools/vast.py create <offer_id> --disk 60 --yes
 
 | 事象 | 対処 |
 |---|---|
-| **リモートで `pkill -f "..."` を打つと自分の SSH シェルごと死ぬ** | コマンド文字列自体がパターンに一致する。`pkill -9 -f "python3 -m trai[n]"` のように**角括弧で自己一致を外す** |
+| **リモートで `pkill -f "..."` を打つと自分の SSH シェルごと死ぬ** | コマンド文字列自体がパターンに一致する。`pkill -9 -f "python3 -m trai[n]"` のように**角括弧で自己一致を外す**。**hook が止めるようになりました** |
 | `ssh ... 'cmd &'` は SSH が channel を閉じないので戻ってこない | `setsid nohup ... < /dev/null > log 2>&1 &` で完全に切り離し、ログを別途 `tail` する |
 | 長時間ジョブの進捗を `ssh` で毎回取ると turn を食う | 完了マーカー（`echo "=== 完了 ==="`）を仕込み、`until grep -q ...; do sleep 60; done` を**バックグラウンドで 1 本**回して通知を待つ |
 | ダウンロードの進捗バーが**巨大な出力**になる | 取得するときは `grep -aE "^\[...\]"` などで必ず絞る。生の `tail` を投げない |

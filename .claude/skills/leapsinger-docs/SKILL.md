@@ -47,6 +47,7 @@ description: doc/ 配下と README / CLAUDE.md を更新するときの作法。
 | 作業手順で分かったこと | 該当する skill（[verify](../leapsinger-verify/SKILL.md) / [experiment](../leapsinger-experiment/SKILL.md) / [tdd](../leapsinger-tdd/SKILL.md) / [vast](../vast-instance/SKILL.md)）。**文書に書いただけでは次の作業で読まれない** |
 | 「常に間違い」なコマンドが判明 | `tools/hooks/guard_commands.py` にルール、`tools/hooks/test_guard.py` に**止めるケースと通すケースの両方**、CLAUDE.md の hook 一覧 |
 | テスト件数・ステージ数 | CLAUDE.md / status / tdd skill。**数えずに書かない** |
+| 測っていない軸が見つかった | [`svc-evaluation.md`](../../../doc/svc-evaluation.md) の客観指標表と、該当マイルストーンの進捗節。**「その指標では検知できない」ことも書く** |
 
 新しい文書を足したら [`svc.md`](../../../doc/svc.md) の文書一覧に行を足す（索引が入口なので、
 載っていない文書は無いのと同じ）。

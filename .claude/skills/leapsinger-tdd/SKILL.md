@@ -12,7 +12,7 @@ description: このリポジトリで実装を書くときの TDD の当て方�
 ```bash
 uv run python -m unittest test_svc_model test_svc_preprocess test_svc_dataset -v   # 単体 191 件
 uv run python -m unittest test_svc_model.HarmonicSVCModelTests.test_single_item_inference_contract
-uv run python tools/hooks/test_guard.py                      # hook の回帰 45 件
+uv run python tools/hooks/test_guard.py                      # hook の回帰 51 件
 LEAPSINGER_INTEGRATION=1 uv run python -m unittest test_svc_preprocess_integration   # 実モデル
 uv run python tools/smoke/run_smoke.py                       # 全経路（実装後の確認であってテストではない）
 ```

@@ -37,6 +37,10 @@ BLOCK = [
     "uv run python -m preprocess.download_scripts.download_oniku",
     # 空文字は「未設定」として扱われ CUDA が隠れない。`-1` でないと効かない（M3 で実測）
     'CUDA_VISIBLE_DEVICES="" uv run python tools/nhv_indist.py',
+    # 自分のコマンド文字列がパターンに一致し、実行中のシェルごと死ぬ（M3 で実測）
+    'pkill -f "python -m train"',
+    "pkill -9 -f m3_corpus",
+    "ssh host 'pkill -f uv run'",
     "CUDA_VISIBLE_DEVICES= uv run python tools/m3_verify.py --ckpt x.pt",
 ]
 
@@ -58,6 +62,9 @@ ALLOW = [
     "uv run python preprocess/download_scripts/download_natsume.py",
     "CUDA_VISIBLE_DEVICES=-1 uv run python tools/nhv_indist.py --device cpu",
     "uv run python -m preprocess.svc.run --wav-dir download/x --out data/x",
+    'pkill -9 -f "python3 -m trai[n]"',        # 角括弧で自己一致を外してある
+    "pgrep -fa m3_corpus",                     # 列挙するだけなので害はない
+    'pkill -f "python -m train"  # guard:allow',
 ]
 
 

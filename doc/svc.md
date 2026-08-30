@@ -63,6 +63,7 @@
 - speaker embedding を fine-tune 後も残すか、target 固定モデルへ焼き込むか。
 - offline teacher の合格閾値と、許容する streaming lookahead / 往復遅延。
 - 256 次元部分集合の seed 0 と seed 1 の差（**1 度比較して seed 1 が良い方向だったが、各 1 run では部分集合の差と run のばらつきを分離できない**。M4 の前に反復して確かめる）。
+- **base の高域不足にどう対処するか。** 変換出力の spectral centroid は上限比で区間により −4%〜−26%（[実行計画](svc-plan.md) M3 の進捗節）。学習の継続・GAN の導入・M4 へ進む、の 3 択で**要ユーザー判断**です。
 
 **決着済み（2026-08-30）:** 補間方法は **left（直前保持）**、256 次元の部分集合は **seed 0 を既定**、
 `content-vec-best` は **layer 12 の hidden state（768 次元・50 Hz）を実モデルで確認**、

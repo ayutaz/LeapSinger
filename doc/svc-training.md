@@ -29,6 +29,8 @@ Phase 5  streaming student distillation
 
 **確認済み（2026-08-30 実施）:** より小さい corpus として **23 話者 / 約 18 時間**（GTSinger 全 9 言語 20 歌手 + 日本語 3 DB、1 歌手あたり 0.75 時間）で recipe を確定しました。`balance_speakers: true` の speaker-balanced sampling で 30,000 step 完走し、未知 source（VocalSet）でも内容が崩壊しないことを確認しています。詳細は [実行計画](svc-plan.md) M3 の進捗節。
 
+**確認済み（但し書き）: この base には高域不足が残っています。** 変換出力の spectral centroid は 「GT mel をボコーダーに通した再合成」に対して区間により **−4%〜−26%**。mel の bin 80 以上（約 3 kHz 超）が −0.15〜−0.19 ln-mel 不足しています。eval loss が 30,000 step でも下降中だったので**学習不足**の線と、`laplacian_var_ratio` 0.869 から**過平滑**の線があります。
+
 ```text
 Singer A WAV -> content/F0/loudness + speaker A -> mel A
 Singer B WAV -> content/F0/loudness + speaker B -> mel B
@@ -94,6 +96,8 @@ vocoder fine-tune は target similarity を上げる可能性がありますが�
 ## 7. Phase 4: offline quality gate
 
 [評価計画](svc-evaluation.md) に従い、同一 source、同一 target、同一音量処理で baseline を比較します。held-out song と未知 source singer を必須とします。最良 checkpoint を train loss だけで選びません。
+
+**音の明るさ（spectral centroid と帯域比）を必ず含めます。** 内容・音高の指標は高域の欠落を検知しないことが M3 で分かっています（[評価計画](svc-evaluation.md) 4 節）。
 
 ## 8. Phase 5: streaming distillation
 

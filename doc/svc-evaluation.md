@@ -45,11 +45,14 @@ target singer の train 曲、同一 take、近重複 clip は test から除外
 | intelligibility | CER / phoneme error | 日本語歌唱 ASR の bias を明記する |
 | signal quality | SIG / BAK / OVRL、DNSMOS 系 | music/singing への妥当性を過信しない |
 | spectral | mel/STFT distance、MCD | parallel reference がある subset に限定 |
+| **音の明るさ** | **spectral centroid、帯域エネルギー比**（[`tools/audio_metrics.py`](../tools/audio_metrics.py)） | **source ではなく「GT mel をボコーダーに通した再合成」を上限の基準にする。** 内容・音高・V/UV の指標は高域の欠落を検知しない（M3 で実測） |
 | timing | onset/offset deviation | source preservation の確認 |
 | compute | RTF、peak VRAM、model size | feature extraction と vocoder を含む/除くを併記 |
 | streaming | algorithmic latency、end-to-end latency、boundary error | 実機 audio I/O で測る |
 
 一つの総合点へ早期に集約せず、pitch・内容・target similarity・artifact・latency を別軸で報告します。
+
+**確認済み（2026-08-30、M3）: 内容指標は音の劣化を検知しません。** 推論条件の不具合で spectral centroid が 620 → 368 Hz へ落ちたとき、content cos は 0.8217 → 0.8096 としか動かず、F0 相関も V/UV もほぼ無反応でした。**耳で「こもっている」と分かる差です。** 内容・音高の指標が揃って良いことを音質の根拠にしないでください。
 
 ## 5. 主観評価
 

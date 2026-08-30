@@ -28,6 +28,7 @@
 | [`test_svc_preprocess.py`](../test_svc_preprocess.py) / [`test_svc_dataset.py`](../test_svc_dataset.py) | 契約テスト（合計 185 件のうち 166 件） |
 | [`configs/svc_base_multi.yaml`](../configs/svc_base_multi.yaml) / [`tools/m3_corpus.py`](../tools/m3_corpus.py) | M3 の recipe と素材の用意（話者ごとに 1 shard） |
 | [`tools/m2_verify.py`](../tools/m2_verify.py) / [`tools/m3_verify.py`](../tools/m3_verify.py) / [`tools/nhv_indist.py`](../tools/nhv_indist.py) | M2 / M3 / M0 ゴール 4 の測定と、その JSON 報告 |
+| [`tools/svc_convert.py`](../tools/svc_convert.py) / [`tools/audio_metrics.py`](../tools/audio_metrics.py) | 任意 WAV の変換 CLI と、帯域・spectral centroid の測定 |
 | `log/m3_base/{config.yaml,perf.json,events}` と `out/m3_*/m3_report.json` | M3 の実験記録（回収済み。スループット・peak VRAM・内容保持の一次データ） |
 | [`doc/svc-content-encoder.md`](svc-content-encoder.md) / [`doc/svc-dataset-ledger.md`](svc-dataset-ledger.md) | encoder 選定と M0 台帳 |
 | [`pyproject.toml`](../pyproject.toml) / [`uv.lock`](../uv.lock) / `.python-version` | Python 3.13 固定、CUDA wheel index、依存の解決結果 |

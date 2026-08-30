@@ -114,6 +114,26 @@ def check_local_training(cmd: str) -> tuple[str, str] | None:
             "インスタンスを用意し、そこで学習する")
 
 
+def check_pkill(cmd: str) -> tuple[str, str] | None:
+    """`pkill -f <pattern>` で自分の実行中シェルを殺すのを止める。
+
+    このハーネスのコマンドは `bash -c "<コマンド全文>"` で走るので、**シェル自身の
+    cmdline にパターン文字列が含まれます**。`pkill` は自分の PID は除外しますが
+    親シェルは除外しないため、`pkill -f "python -m train"` を打つと**そのシェルごと死に、
+    後続のコマンドが黙って実行されません**（M3 の vast.ai 作業で実測。config の書き換えが
+    実行されず、原因が分かるまで数往復かかった）。
+
+    角括弧で自己一致を外してあれば通します（`trai[n]` は自分の cmdline とは一致しない）。
+    `pgrep` は列挙するだけなので対象外です。
+    """
+    m = re.search(r"(?<![\w./-])(pkill|killall)\s+[^|;&]*?-f\b([^|;&]*)", cmd)
+    if not m or "[" in m.group(2):
+        return None
+    return ("`pkill -f` はこのハーネスでは実行中のシェル自身に一致し、後続のコマンドごと落とす",
+            "角括弧で自己一致を外す（例: `pkill -9 -f \"python3 -m trai[n]\"`）。"
+            "列挙するだけなら `pgrep -fa <pattern>`")
+
+
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
@@ -123,7 +143,7 @@ def main() -> int:
     if not cmd or ALLOW_MARK in cmd:
         return 0
 
-    for check in (check_train, check_local_training):
+    for check in (check_train, check_local_training, check_pkill):
         hit = check(cmd)
         if hit:
             why, instead = hit
