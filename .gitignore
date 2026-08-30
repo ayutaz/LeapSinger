@@ -101,6 +101,7 @@ dict/ja_phoneme_vuv.yaml
 notebooks/exported_model/
 
 # ── Scratch / temporary ─────────────────────────────────────────────────
+.smoke/
 scratch/
 tmp/
 *.tmp

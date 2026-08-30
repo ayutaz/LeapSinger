@@ -45,8 +45,12 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
 
 テスト:
 
+    uv run python tools/smoke/run_smoke.py     # 全経路の疎通（合成音声・GPU で約3分）
     uv run python -m unittest test_svc_model -v
     uv run python -m unittest test_svc_model.HarmonicSVCModelTests.test_forward_and_infer_reuse_flow_with_svc_conditioning
+    uv run python tools/hooks/test_guard.py    # コマンド guard の回帰テスト
+
+`run_smoke.py` は 3rd-party API・学習・自動再開・推論・ボコーダー・前処理・ONNX 書き出しまでを 1 コマンドで通し、終了コードが失敗ステージ数になります。**依存やバージョンを変えた後、環境を移した後、学習を始める前に必ず走らせること。** 入力は合成波形なので品質の検証にはならず、配線が壊れていないことだけを示します。
 
 `uv sync` 済みの環境なら `uv run python -m unittest discover` も通ります。ただし top-level の `test_*.py` は `test_svc_model.py` だけなので、収集される 10 件は上と同じです（preprocess / export / 既存 SVS 経路に自動テストはありません）。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗するので、その場合は `test_svc_model.py` を直接指定してください。
 
@@ -96,6 +100,22 @@ data/<db>/svc_shard.npz     # <name>|content [T,C] / |f0_interp [T] / |uv [T] / 
 **すべての `T` は完全一致させます。** loader（`svc_dataset.py`）は暗黙の transpose や補間を行わず、幅・フレーム数の不一致を例外にします。この「黙って直さない」性質は前処理ミスを早期に露出させるための設計なので、緩めないこと。
 
 **WAV からこの shard を生成する前処理はまだリポジトリ内に存在しません**（ContentVec/HuBERT + RMVPE + loudness の抽出器が未実装）。SVC の学習を回すには外部で shard を用意する必要があります。実装する際は encoder/model revision、層、sample rate、hop、loudness 定義、F0 extractor version を manifest に記録します。
+
+## 自動化と安全装置
+
+`.claude/` にこのリポジトリ用の skill と hook を置いています。
+
+| 種類 | 名前 | 役割 |
+|---|---|---|
+| skill | `leapsinger-verify` | 依存・環境を変えた後の疎通確認の回し方と結果の読み方 |
+| skill | `leapsinger-experiment` | 学習実験を事故なく回す手順（run 名、無視される設定、記録、主張の範囲） |
+| skill | `leapsinger-docs` | 確度ラベルと主張規則を保ったままドキュメントを更新する作法 |
+| skill | `vast-instance` | vast.ai インスタンスの検索・作成・回収・破棄 |
+| hook | `tools/hooks/guard_commands.py` | `PreToolUse` で「常に間違い」なコマンドを実行前に止める |
+
+hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の staging、`git push --force`、`git reset --hard`、`log|data|checkpoints|.git` の `rm -rf`、`vastai` の直接叩き（料金確認を飛ばすため）、`unittest discover`、そして**既存 ckpt がある run へ `--init_from` を渡す**こと（`train.py` はこれを黙って無視して自動再開します）。
+
+止めすぎると自動運転が壊れるので、判断の余地がないものだけを対象にしています。どうしても必要なときはコマンド末尾に `# guard:allow` を付けると通ります。ルールを足したら `tools/hooks/test_guard.py` にケースも足してください。
 
 ## この開発での約束事
 
