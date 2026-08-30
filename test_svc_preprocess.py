@@ -16,8 +16,10 @@ from pathlib import Path
 
 import numpy as np
 
+from leapsinger.config import MelSpec
 from leapsinger.mel import wav_to_mel_nhv
 from preprocess.svc.align import align_left
+from preprocess.svc.extract import extract_phrase
 from preprocess.svc.shard import build_shard
 from preprocess.svc.loudness import dataset_stats, frame_log_rms, normalize_with_stats
 from preprocess.svc.subset import apply_subset, subset_indices
@@ -373,6 +375,112 @@ class BuildShardTests(unittest.TestCase):
         b = np.load(self.out / "svc_shard.npz")
         name = sorted(first)[0]
         self.assertFalse(np.array_equal(first[name], b[name]))
+
+
+class ExtractPhraseTests(unittest.TestCase):
+    """WAV -> cache の 1 段目。
+
+    重い ContentVec / RMVPE は**引数で受け取り**ます。関数の内側で `from_pretrained` すると
+    単体テストが書けなくなるためです（`leapsinger-tdd` skill）。ここでテストするのは
+    「整列と契約」であって encoder の中身ではありません。
+    """
+
+    MEL = MelSpec()          # 44,100 / hop 256 / 128 mel
+    C_IN = 768
+    ENCODER_SR = 16000
+
+    def _wav(self, seconds=2.0, sr=None):
+        sr = sr or self.MEL.sr
+        t = np.arange(int(seconds * sr)) / sr
+        return (0.4 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+
+    def _fake_encoder(self, record=None):
+        """16 kHz・stride 320 の SSL を模した偽 encoder。値は本物を真似ない。"""
+        def enc(wav16, sr):
+            if record is not None:
+                record.append((len(wav16), sr))
+            frames = max(1, len(wav16) // 320)
+            return np.tile(np.arange(frames, dtype=np.float32)[:, None], (1, self.C_IN))
+        return enc
+
+    def _fake_f0(self, frames_for):
+        def f0(wav, sr, hop):
+            n = frames_for(wav, sr, hop)
+            return (np.full(n, 220.0, np.float32), np.ones(n, np.float32))
+        return f0
+
+    def _mel_frames(self, wav, sr, hop):
+        return wav_to_mel_nhv(wav, sr=self.MEL.sr, n_fft=self.MEL.n_fft, hop=self.MEL.hop,
+                              win=self.MEL.win, n_mels=self.MEL.n_mels,
+                              fmin=self.MEL.fmin, fmax=self.MEL.fmax).shape[1]
+
+    def _extract(self, wav=None, sr=None, **kw):
+        wav = self._wav() if wav is None else wav
+        opts = dict(content_encoder=self._fake_encoder(), f0_extract=self._fake_f0(self._mel_frames),
+                    mel=self.MEL, encoder_sr=self.ENCODER_SR)
+        opts.update(kw)
+        return extract_phrase(wav, sr or self.MEL.sr, **opts)
+
+    def test_returns_every_key_build_shard_needs(self):
+        out = self._extract()
+        for key in ("content", "f0_hz", "uv", "loudness", "mel"):
+            self.assertIn(key, out)
+
+    def test_frame_arrays_all_match_the_mel(self):
+        out = self._extract()
+        frames = out["mel"].shape[1]
+        for key in ("f0_hz", "uv", "loudness"):
+            self.assertEqual(out[key].shape, (frames,), key)
+
+    def test_content_stays_on_the_ssl_grid(self):
+        # 整列は 2 段目の仕事。ここでは SSL のフレーム数のまま返す。
+        out = self._extract()
+        self.assertEqual(out["content"].shape[1], self.C_IN)
+        self.assertLess(out["content"].shape[0], out["mel"].shape[1])
+
+    def test_resamples_to_the_encoder_rate_before_calling_it(self):
+        # ContentVec は 16 kHz を前提にする。44.1 kHz のまま渡すと無意味な特徴になる。
+        seen = []
+        self._extract(content_encoder=self._fake_encoder(seen))
+        self.assertEqual(len(seen), 1)
+        got_len, got_sr = seen[0]
+        self.assertEqual(got_sr, self.ENCODER_SR)
+        self.assertAlmostEqual(got_len / self.ENCODER_SR, 2.0, places=1)
+
+    def test_resamples_a_48k_input_to_the_mel_rate(self):
+        # 素材は 44.1k / 48k / 96k が混在する。mel 設定は共有なので入口で揃える。
+        out = self._extract(wav=self._wav(sr=48000), sr=48000)
+        self.assertEqual(out["mel"].shape[1], self._mel_frames(self._wav(), self.MEL.sr, self.MEL.hop))
+
+    def test_output_feeds_build_shard(self):
+        # 1 段目と 2 段目が実際につながることの確認。
+        out = self._extract()
+        d = Path(tempfile.mkdtemp(prefix="ex_")); self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        m = build_shard({"songA_0000": out}, d, n_dims=64, subset_seed=0,
+                        frame_rate=self.MEL.frame_rate)
+        self.assertEqual(m["n_dims"], 64)
+        z = np.load(d / "svc_shard.npz")
+        self.assertEqual(z["songA_0000|content"].shape, (out["mel"].shape[1], 64))
+
+    def test_is_deterministic(self):
+        a, b = self._extract(), self._extract()
+        for k in ("content", "f0_hz", "uv", "loudness", "mel"):
+            self.assertTrue(np.array_equal(a[k], b[k]), k)
+
+    def test_rejects_a_non_mono_input(self):
+        with self.assertRaises(ValueError):
+            self._extract(wav=np.zeros((2, 1000), dtype=np.float32))
+
+    def test_rejects_an_f0_extractor_that_returns_the_wrong_length(self):
+        # 契約違反は黙って直さずに落とす。
+        bad = lambda wav, sr, hop: (np.zeros(3, np.float32), np.zeros(3, np.float32))
+        with self.assertRaises(ValueError):
+            self._extract(f0_extract=bad)
+
+    def test_rejects_an_encoder_that_returns_a_non_2d_array(self):
+        bad = lambda wav16, sr: np.zeros(10, dtype=np.float32)
+        with self.assertRaises(ValueError):
+            self._extract(content_encoder=bad)
 
 
 if __name__ == "__main__":
