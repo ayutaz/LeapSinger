@@ -109,3 +109,6 @@ onnxruntime_profile_*.json
 
 # Private: former base trainer, superseded by the GAN train.py
 /train_old.py
+
+# ── M0 の素材置き場（公開コーパスのダウンロード先。コミットしない）──
+.m0data/

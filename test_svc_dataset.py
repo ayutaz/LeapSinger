@@ -11,6 +11,7 @@ import unittest
 import numpy as np
 
 from preprocess.svc.audit import AuditThresholds, audit_clip, effective_bandwidth_hz
+from preprocess.svc.report import build_report
 from preprocess.svc.coverage import pitch_band_seconds, voiced_range
 from preprocess.svc.split import split_by_group
 
@@ -270,6 +271,93 @@ class CoverageTests(unittest.TestCase):
                          frame_rate=self.FR)
         self.assertEqual(r["voiced_sec"], 0.0)
         self.assertTrue(all(v == 0.0 or np.isnan(v) is False for v in r.values()))
+
+
+class BuildReportTests(unittest.TestCase):
+    """M0 の成果物（reject list / coverage / split list / manifest）を 1 度に作る。
+
+    実行計画 M0 の成果物は「dataset ledger、split list、reject list、coverage 集計」。
+    道具が関数として在るだけでは、素材が届いたときに毎回つなぎを書くことになる。
+    音声の読み込みは差し替え可能にして、重いモデルもファイル I/O も使わずにテストする。
+    """
+
+    SR = 44100
+
+    def _loader(self, bad: set[str]):
+        """name -> (wav, sr) を返す偽のローダー。bad に入れた名前は無音（= 弾かれる）。"""
+        def load(name):
+            if name in bad:
+                return np.zeros(self.SR * 2, dtype=np.float32), self.SR
+            return _tone(self.SR * 2, sr=self.SR), self.SR
+        return load
+
+    def _names(self, n_groups=6, per_group=3):
+        return {f"song{g:02d}_{i:04d}": f"song{g:02d}"
+                for g in range(n_groups) for i in range(per_group)}
+
+    def test_records_every_rejected_clip_with_its_reasons(self):
+        names = self._names()
+        bad = {"song00_0000", "song03_0001"}
+        r = build_report(names, self._loader(bad), expected_sr=self.SR,
+                         seed=0, eval_groups=1, test_groups=1)
+        self.assertEqual(sorted(r["rejects"]), sorted(bad))
+        for name in bad:
+            self.assertTrue(r["rejects"][name], f"{name} に理由が付いていない")
+
+    def test_rejected_clips_never_appear_in_any_split(self):
+        # 弾いた素材が split に残っていると、学習が起動時に落ちる。
+        names = self._names()
+        bad = {"song00_0000"}
+        r = build_report(names, self._loader(bad), expected_sr=self.SR,
+                         seed=0, eval_groups=1, test_groups=1)
+        for key in ("train", "eval", "test"):
+            self.assertNotIn("song00_0000", r["split"][key])
+
+    def test_accepted_clips_are_all_placed(self):
+        names = self._names()
+        bad = {"song00_0000"}
+        r = build_report(names, self._loader(bad), expected_sr=self.SR,
+                         seed=0, eval_groups=1, test_groups=1)
+        placed = r["split"]["train"] + r["split"]["eval"] + r["split"]["test"]
+        self.assertEqual(sorted(placed), sorted(set(names) - bad))
+
+    def test_manifest_records_what_is_needed_to_reproduce(self):
+        r = build_report(self._names(), self._loader(set()), expected_sr=self.SR,
+                         seed=3, eval_groups=1, test_groups=1)
+        m = r["manifest"]
+        for key in ("seed", "eval_groups", "test_groups", "expected_sr", "thresholds"):
+            self.assertIn(key, m)
+        self.assertEqual(m["seed"], 3)
+
+    def test_reports_accepted_and_rejected_durations(self):
+        names = self._names(n_groups=2, per_group=2)
+        r = build_report(names, self._loader({"song00_0000"}), expected_sr=self.SR,
+                         seed=0, eval_groups=1, test_groups=0)
+        self.assertAlmostEqual(r["totals"]["accepted_sec"], 3 * 2.0, places=3)
+        self.assertAlmostEqual(r["totals"]["rejected_sec"], 1 * 2.0, places=3)
+
+    def test_is_deterministic_for_the_same_seed(self):
+        names = self._names()
+        a = build_report(names, self._loader(set()), expected_sr=self.SR,
+                         seed=5, eval_groups=1, test_groups=1)
+        b = build_report(names, self._loader(set()), expected_sr=self.SR,
+                         seed=5, eval_groups=1, test_groups=1)
+        self.assertEqual(a["split"], b["split"])
+
+    def test_raises_when_every_clip_is_rejected(self):
+        # 全滅は「検査が厳しすぎる」か「素材が壊れている」。黙って空の split を返さない。
+        names = self._names(n_groups=3)
+        with self.assertRaises(ValueError):
+            build_report(names, self._loader(set(names)), expected_sr=self.SR,
+                         seed=0, eval_groups=1, test_groups=1)
+
+    def test_a_group_losing_every_clip_drops_out_of_the_split(self):
+        names = self._names(n_groups=4, per_group=2)
+        bad = {"song00_0000", "song00_0001"}
+        r = build_report(names, self._loader(bad), expected_sr=self.SR,
+                         seed=0, eval_groups=1, test_groups=1)
+        placed = r["split"]["train"] + r["split"]["eval"] + r["split"]["test"]
+        self.assertEqual([n for n in placed if n.startswith("song00")], [])
 
 
 if __name__ == "__main__":
