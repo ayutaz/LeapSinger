@@ -274,6 +274,53 @@ base corpus に適します。**
 **注意:** HF の tree API は `recursive=true` でも一部しか返しませんでした（187 件と報告されたが
 実際は 1,600 件以上）。**API の件数を素材量の根拠にしないこと。**
 
+#### 付属注釈が非常に厚い（M0 ゴール 3 を音素単位で満たせる）
+
+**確認済み:** 各 wav に同名の `.json` / `.TextGrid` / `.musicxml` が付きます。json は**語単位の配列**で、
+1 要素が次を持ちます。
+
+- `ph` / `ph_start` / `ph_end` — **音素とその時刻**（アライメント済み）
+- `note` / `note_dur` / `note_start` / `note_end` — **音符**
+- `mix` / `falsetto` / `breathy` / `pharyngeal` / `glissando` / `vibrato` — **音素ごとの技法フラグ**
+- `singing_method` / `pace` / `range` / `emotion` — 全体属性
+
+TextGrid の tier も `word / phone / mix / falsetto / breathy / pharyngeal / vibrato / glissando / global`
+です。**発声スタイルの coverage を、ファイル単位ではなく音素単位の滞在時間で出せます。**
+
+#### JA-Soprano-1 の実測 coverage（1,815 ファイル・音素時間 5.18 h）
+
+> JA-Tenor-1 は取得継続中のため、下記は**ソプラノ 1 名分**です。
+
+| 技法（重複組合せ含む） | 時間 | 比率 |
+|---|---:|---:|
+| なし（Control） | 152.3 分 | **49.0%** |
+| mix | 61.4 分 | 19.8% |
+| falsetto | 35.4 分 | 11.4% |
+| mix+glissando | 16.5 分 | 5.3% |
+| falsetto+glissando | 13.2 分 | 4.2% |
+| glissando | 9.5 分 | 3.1% |
+| breathy | 9.4 分 | 3.0% |
+| pharyngeal | 6.3 分 | 2.0% |
+
+| 全体属性 | 出現する値 |
+|---|---|
+| `singing_method` | **pop のみ** |
+| `pace` | fast / slow / moderate |
+| `range` | **medium / high のみ（low が無い）** |
+| `emotion` | happy / sad |
+
+#### ここから読み取れる欠落
+
+**確認済み: `range` に `low` がありません。** ソプラノなので当然ですが、
+[実行計画](svc-plan.md) M0 ゴール 3 が求める「low/mid/high の滞在時間」のうち **low がこの歌手には
+存在しない**ことを意味します。低音域は別の歌手（テナー、または既存 3 DB の男声）で埋める必要があります。
+
+**確認済み: `singing_method` は pop のみ**で、クラシック等の唱法は含まれません。
+
+**確認済み: 音素表記は IPA です**（`ɯ` `ɾ` など 50 種）。リポジトリの `dict/ja.phonemes` は
+ローマ字表記なので、**この注釈を SVS 経路で使うなら変換表が要ります**。SVC 経路は音素を使わないので
+影響しません。
+
 ## 5. 配布形態ごとに何が使えるか
 
 **決定:** **A（手元でのみ使用・配布なし）**。研究・個人利用のため、CC-NC 系も research-only も使えます。
