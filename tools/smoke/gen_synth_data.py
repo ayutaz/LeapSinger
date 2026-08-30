@@ -4,6 +4,7 @@
 作るもの（すべて出力先ディレクトリ配下）:
 
   data/svc_target/{metadata.json,svc_shard.npz}   SVC 学習用（content は mel の線形射影で代用）
+  svc_cache/*.npz                                 SVC 前処理 2 段目（build-shard）の入力
   data/oniku/{metadata.json,shard.npz}            SVS 学習用（phoneme_ids / dur_sec つき）
   db/{wav/take01.wav,mono_label/take01.lab}       preprocess.run にかける生データ
   recipe.yaml                                     その DB の recipe
@@ -28,7 +29,13 @@ sys.path.insert(0, str(ROOT))
 from leapsinger.mel import wav_to_mel_nhv  # noqa: E402
 
 SR, HOP, N_FFT, WIN, N_MELS, FMIN, FMAX = 44100, 256, 2048, 2048, 128, 40.0, 16000.0
-CONTENT_DIM = 768
+# shard に書く幅は `configs/svc_base.yaml` の `model.content_dim` と一致していなければならない。
+# 食い違うと train.py が「model.content_dim=... but dataset content_dim=...」で止まる。
+# ここを定数にしていたせいで、config を 768 -> 256 に変えたとき smoke の SVC 学習・再開・
+# 推論の 3 ステージが黙って落ちるようになっていた。**config から読む。**
+CONTENT_DIM = int(yaml.safe_load(
+    (ROOT / "configs" / "svc_base.yaml").read_text(encoding="utf-8"))["model"]["content_dim"])
+SSL_DIM = 768          # 1 段目の cache に残る生の ContentVec 幅（2 段目が 256 へ削る）
 
 
 def _sing(dur_sec: float, base_hz: float, seed: int):
@@ -89,6 +96,21 @@ def build_shards(out: Path) -> dict:
     (svc_dir / "metadata.json").write_text(json.dumps(
         {"content_dim": CONTENT_DIM, "frame_rate": SR / HOP, "phrases": meta}, indent=1),
         encoding="utf-8")
+
+    # ── SVC 前処理 2 段目の入力 cache ────────────────────────────────────────
+    # 1 段目（ContentVec / RMVPE）は重いので合成で代用し、CLI の 2 段目だけを踏む。
+    # content は **SSL の 50 Hz グリッド**のままにする（整列は 2 段目の仕事）。
+    cache = out / "svc_cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    for name, d in built.items():
+        T = d["T"]
+        t_ssl = max(1, round(T * 50.0 / (SR / HOP)))
+        np.savez(cache / f"{name}.npz",
+                 content=rng.standard_normal((t_ssl, SSL_DIM)).astype(np.float32),
+                 f0_hz=d["f0"], uv=d["uv"],
+                 loudness=np.log(np.maximum(1e-5, np.sqrt(np.maximum(
+                     1e-10, _frames(d["wav"].astype(np.float64) ** 2, T))))).astype(np.float32),
+                 mel=d["mel"])
 
     # ── SVS shard ────────────────────────────────────────────────────────────
     phonemes = [l.split("#")[0].strip() for l in

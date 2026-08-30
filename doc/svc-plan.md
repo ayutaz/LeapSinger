@@ -19,30 +19,31 @@
 
 ## 1. 現在地
 
-**確認済み:** **M0 は入手可能な素材について完了**、**M1 は着手中**、M2 以降は未着手です。
-[svc.md](svc.md) の完了レベルは 1〜2 のままです（レベル 3 は「実音声の shard で学習して WAV を出す」ことを要求し、
-そこはまだ到達していません）。
+**確認済み:** **M0 / M1 / M2 は完了**、M3 以降は未着手です。
+[svc.md](svc.md) の完了レベルは **3（実データ）に到達**しています（実音声の shard で学習して WAV を出した）。
+レベル 4 は Seed-VC との blind comparison を要求するので未到達です。
 
 | 状態 | 内容 |
 |---|---|
 | 済 | `HarmonicSVCModel`、`ContentAdapter`、`SVCFeatureDataset`、train/infer 配線、`configs/svc_base.yaml` |
 | 済 | 合成テンソルによる targeted test（shape、padding、alignment 検証、checkpoint 往復） |
 | 済 | 再現可能な開発環境（Python 3.13 固定、`uv.lock`、CUDA 版 torch の実機疎通確認） |
-| 済 | 全経路の疎通確認を 1 コマンド化（`tools/smoke/run_smoke.py` 11 ステージ）、誤コマンドを実行前に止める hook、作業手順の skill 化 |
+| 済 | 全経路の疎通確認を 1 コマンド化（`tools/smoke/run_smoke.py` 12 ステージ）、誤コマンドを実行前に止める hook、作業手順の skill 化 |
 | 済 | 学習環境の決定（vast.ai の Linux GPU）と、その操作系（`tools/vast.py` / `tools/vast_bootstrap.sh`） |
 | 済 | content encoder・F0 extractor・loudness 正規化・補間方法・部分集合 seed の決定（[content encoder の選定](svc-content-encoder.md)） |
 | 済 | **M0 完了**（入手可能な素材について）。5 コーパスの取得・検査・coverage・split と台帳（[データセット台帳](svc-dataset-ledger.md)） |
-| 済 | M1 の一部。`align` / `subset` / `loudness` を TDD で実装（32 テスト） |
-| 未 | **実音声を SVC モデルに通していない。WAV も 1 本も出していない。** 実音声に対して行ったのは M0 の検査・音域/技法の集計・split までです |
+| 済 | **M1 完了**。WAV から shard までコマンド 1 本、再実行で bit 一致。単体 84 テスト |
+| 済 | **M2 完了**。実音声 2 phrase を overfit して WAV を生成。F0 相関 0.9991、決定的モードで bit 再現 |
+| 未 | **実データでの本学習をしていない。** overfit は一般化でも音質でもありません |
 
-**決定:** 実音声を通していない段階では、品質・速度に関する対外的な主張を行いません。
+**決定:** 実データで汎化する学習を行うまで、品質・速度に関する対外的な主張を行いません。
 
 ## 2. マイルストーン一覧
 
 | ID | 名前 | 一言でいう目的 | 完了の判定材料 |
 |---|---|---|---|
 | **M0** ✅ | データ確定 | 学習してよい素材を法的・品質的に固定する | dataset ledger と split list |
-| **M1** 🔨 | 特徴抽出前処理 | WAV から `svc_shard.npz` を再現可能に作る | 先に書いた失敗するテスト、再実行で一致する shard と manifest |
+| **M1** ✅ | 特徴抽出前処理 | WAV から `svc_shard.npz` を再現可能に作る | 先に書いた失敗するテスト、再実行で一致する shard と manifest |
 | **M2** ✅ | 実音声 smoke | 配線が実音声で成立することを示す | overfit した phrase の WAV |
 | **M3** | multi-singer base | 話者に依存しない変換器の土台を作る | 未知 source singer で崩れない base ckpt |
 | **M4** | target fine-tune | target singer の音色を再現する | offline teacher ckpt と指標一式 |
@@ -67,12 +68,12 @@ M0 --> M1 --> M2 --> M3 --> M4 --> M5 --> M6
 
 ### ゴール
 
-次の 4 つが揃った状態を完了とします。
+次の 5 つが揃った状態を完了とします。
 
 1. target singer と multi-singer corpus について、**学習可否・fine-tune 可否・重み配布可否・生成音声の利用条件**を規約 URL と取得日つきで記録した dataset ledger がある。
 2. 全素材について clipping、伴奏漏れ、強い reverb、sample rate 誤りの検査を通し、除外したものは reject reason つきで残してある。
 3. 音域（low/mid/high の滞在時間）と発声スタイル（chest / falsetto / breathy / 強声 / 弱声）の coverage を集計してある。
-4. **base corpus が NHVSing にとって in-distribution かを判断してある。** 同梱ボコーダー NHVSing V3 は 本プロジェクトと同一の mel 仕様（44.1 kHz / hop 256 / 128-mel / 40–16000 Hz ln）で、特定の 10 コーパスで学習されています（[台帳](svc-dataset-ledger.md) 7 節）。そこに含まれない歌手の mel は vocoder にとって未知になり得ます。M2 で両方を少量試して比較し、M3 の本格学習の前に決めます。
+4. **base corpus が NHVSing にとって in-distribution かを判断してある。** 同梱ボコーダー NHVSing V3 は 本プロジェクトと同一の mel 仕様（44.1 kHz / hop 256 / 128-mel / 40–16000 Hz ln）で、特定の 10 コーパスで学習されています（[台帳](svc-dataset-ledger.md) 7 節）。そこに含まれない歌手の mel は vocoder にとって未知になり得ます。**ground-truth mel の再合成忠実度**を既知/未知のコーパスで比較して判断します。
 5. train / validation / test を**曲単位・収録セッション単位**で分離した split list があり、seed が記録されている。未知 source singer の test set が別に用意されている。**性別で層化する**（実データで偏りを確認済み）。
 
 ### 成果物
@@ -81,7 +82,7 @@ dataset ledger（権利・lineage・checksum）、split list、reject list、cov
 
 ### 進捗（2026-08-30）: 入手可能な素材について完了
 
-**確認済み: 4 つのゴールすべてを実データで実行しました。** 詳細と数値は
+**確認済み: 5 つのゴールすべてを実データで実行しました。** 詳細と数値は
 [データセット台帳](svc-dataset-ledger.md) です。
 
 | ゴール | 実施内容 |
@@ -89,7 +90,8 @@ dataset ledger（権利・lineage・checksum）、split list、reject list、cov
 | 1. dataset ledger | 既存 3 DB の権利条件を一次資料から記録。公開コーパス 14 件のライセンス調査。fork 元と同梱 NHVSing の学習データ。取得物の SHA-256。**素材の割り当てを確定** |
 | 2. reject list | 5 コーパス全件に検査。理由つきで記録 |
 | 3. coverage | RMVPE で実 F0 を抽出して音域帯の滞在時間。GTSinger は注釈から**音素単位**の技法 coverage |
-| 4. split list | 曲・歌手単位。**性別で層化**、**曲名を正規化**して leakage を排除 |
+| 4. NHVSing の in/out-of-distribution | **実測して判断済み**。ground-truth mel の再合成忠実度を 5 コーパス × 12 clip で比較し、**GTSinger にペナルティは見えない**（[台帳 7b 節](svc-dataset-ledger.md#7b-nhvsing-にとって-in-distribution-かの実測2026-08-30)） |
+| 5. split list | 曲・歌手単位。**性別で層化**、**曲名を正規化**して leakage を排除 |
 
 **確定した割り当て:**
 
@@ -127,7 +129,7 @@ kiritan の公開 GitHub はラベルのみで音声を含みません）。**�
 
 ### 目的
 
-**未実装:** WAV から `svc_shard.npz` を作るコードは現在リポジトリに存在しません。SVC 学習を 1 度も回せない唯一かつ最大のボトルネックであり、ここを埋めることが最優先です。
+WAV から `svc_shard.npz` を作れないと SVC 学習を 1 度も回せません。ここが直列経路の最大のボトルネックでした。
 
 同時に、この段階で決めた抽出条件は以降のすべての実験の比較基盤になります。後から変えると M2 以降の結果が全部無効になるため、再現性の記録をゴールに含めます。
 
@@ -202,6 +204,26 @@ shard に書くのは 256 次元です（768 ではありません）。loader �
 
 **注意:** SVC では online `pitch_aug` が使えません（`train.py` が SystemExit します）。augmentation を行うならこの段階、特徴量抽出の前に行います。RMVPE はマルチプロセスで動かさないこと。
 
+### 進捗（2026-08-30）: 完了
+
+**確認済み:** WAV ディレクトリから shard までコマンド 1 本で作れます。実装は
+`preprocess/svc/{chunk,extract,encoders,shard,run}.py`、テストは `test_svc_preprocess.py`
+（84 件。重いモデルを使わない）と `test_svc_preprocess_integration.py`（実 ContentVec / RMVPE、
+既定 skip）です。
+
+| ゴール | 結果 |
+|---|---|
+| 1. コマンド 1 本 | `uv run python -m preprocess.svc.run --wav-dir <dir> --out <db>`。波音リツ 1 曲を 42 秒で抽出 |
+| 2. loader が読める | 実 `SVCFeatureDataset` が例外なく読むことをテストで固定。全配列の `T` が完全一致 |
+| 3. phrase 名 `{song}_{NNNN}` | `song_name()` の出力が `_song_of()` を往復することをテストで固定 |
+| 4. bit 一致 | 同じ cache・同じ設定で作り直して **sha256 が一致**（`np.savez` の zip 時刻を固定） |
+| 5. manifest | encoder の id / revision / 層 / sr / stride、補間方法、部分集合の **index と seed**、loudness の窓幅・floor・正規化単位、**RMVPE 重みの sha256 と入手元**、入力 WAV の checksum |
+| 6. テストの分離 | 単体は encoder を引数で受け取る fake で動く。実モデルは `LEAPSINGER_INTEGRATION=1` のときだけ |
+
+**未実施:** 決定 2 の **seed 0 と seed 1 の比較**。shard は両方作ってありますが（`subset_seed`
+は manifest に記録済み）、overfit で差を見る作業は行っていません。既定の seed 0 で M2 を通した
+ため直列経路は止まっていませんが、**M3 の本学習の前に 1 度だけ確かめます**。
+
 ---
 
 ## M2. 実音声 smoke
@@ -244,7 +266,8 @@ overfit run の log、生成 WAV、再現性の確認記録。
 
 **1. 無声だけの phrase が学習に入っていた（M1 の欠陥）。** 最初の overfit で生成された WAV が
 無音になりました。追うと入力の `uv` が全フレーム 0 で、曲の先頭 27 秒がイントロの無音だったためです。
-固定長で先頭から切ると、**89 phrase 中 35 件（39%）が完全に無声**になっていました。
+固定長で先頭から切ると、**89 chunk 中 35 件（39%）が完全に無声**になっていました
+（しきい値 0.5 で最終的に除外されたのは 39 件、採用は 50 phrase）。
 `chunk.py` に `voiced_ratio()` を足し、抽出時に `--min-voiced`（既定 0.3）未満を捨てるようにしました。
 除外後は有声率が最小 0.516 / 平均 0.857 になりました。**合成データでは出ない欠陥です。**
 
@@ -424,6 +447,11 @@ M5 通過。**決定:** M5 を通過していない teacher を基準に student
 1. target singer の高音や裏声で vocoder artifact が系統的に出る。
 2. ground-truth mel を入力しても同じ artifact が出る。
 3. 音響モデルの誤差と vocoder の誤差を切り分けられている。
+
+**現状（2026-08-30）: 起動条件は成立していません。** M0 ゴール 4 の実測で、base 候補の
+GTSinger は NHVSing 既知コーパスと同水準の再合成忠実度を示しました（[台帳 7b
+節](svc-dataset-ledger.md#7b-nhvsing-にとって-in-distribution-かの実測2026-08-30)）。
+M2 でも ground-truth mel 経由と予測 mel 経由がほぼ同等でした。**既存重みをそのまま使います。**
 
 **成果物:** fine-tune 前後の vocoder 重み、同一 mel を通した比較サンプル、artifact の切り分け記録。
 

@@ -32,9 +32,13 @@ class Fail(Exception):
     pass
 
 
+_ENV: dict[str, str] = {}          # 全ステージのサブプロセスに渡す追加の環境変数
+
+
 def sh(args: list[str], *, cwd: Path = ROOT, timeout: int = 3600) -> str:
     """サブプロセスを回して stdout+stderr を返す。失敗したら Fail。"""
     p = subprocess.run([str(a) for a in args], cwd=str(cwd), text=True, timeout=timeout,
+                       env={**os.environ, **_ENV} if _ENV else None,
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                        encoding="utf-8", errors="replace")
     if p.returncode != 0:
@@ -128,6 +132,34 @@ def st_svc_infer(w: Path, dev: str) -> str:
     return out.strip().splitlines()[-1]
 
 
+def st_svc_pp(w: Path, dev: str) -> str:
+    """SVC 前処理の CLI（実行計画 M1）。2 段目だけを合成 cache から回す。
+
+    1 段目は ContentVec と RMVPE を落とすので、ここでは踏まない（実モデルは
+    `test_svc_preprocess_integration.py` の担当）。ここで見るのは CLI・`build_shard`・
+    データ契約・**再実行で bit 一致**（M1 ゴール 4）と、実 loader が読めること（ゴール 2）。
+    """
+    args = [PY, "-m", "preprocess.svc.run", "--from-cache", str(w / "svc_cache"),
+            "--n-dims", "32", "--subset-seed", "0"]
+    out = sh([*args, "--out", str(w / "data" / "svc_pp")])
+    need(out, "[shard]", "shard 生成")
+    sh([*args, "--out", str(w / "data" / "svc_pp2")])
+    a = (w / "data" / "svc_pp" / "svc_shard.npz").read_bytes()
+    b = (w / "data" / "svc_pp2" / "svc_shard.npz").read_bytes()
+    if a != b:
+        raise Fail("同じ cache・同じ設定なのに shard が bit 一致しない")
+
+    check = ("import json,sys;from svc_dataset import SVCFeatureDataset;"
+             f"ds=SVCFeatureDataset([r'{w / 'data' / 'svc_pp'}'],split='train',eval_songs=0);"
+             "it=ds[0];assert it['content'].shape[1]==32;"
+             "m=json.load(open(r'" + str(w / 'data' / 'svc_pp' / 'manifest.json') + "'));"
+             "assert m['loudness_normalization']=='dataset_zscore';"
+             "print('PP-OK',len(ds),it['content'].shape[1])")
+    got = sh([PY, "-c", check])
+    need(got, "PP-OK", "loader が読めること")
+    return f"{got.strip().splitlines()[-1]} / 再実行で bit 一致"
+
+
 def st_svs_train(w: Path, dev: str) -> str:
     out = _train(w, "svs.yaml", "data/oniku", "svs", dev, 20)
     need(out, "[gan] enabled=True", "GAN 有効")
@@ -192,6 +224,7 @@ STAGES = [
     ("svc-train", st_svc_train, "SVC 学習"),
     ("svc-resume", st_svc_resume, "SVC 自動再開（torch.load 既定）"),
     ("svc-infer", st_svc_infer, "SVC 推論 -> mel -> WAV"),
+    ("svc-pp", st_svc_pp, "SVC 前処理 CLI（2 段目・bit 一致・loader）"),
     ("svs-train", st_svs_train, "SVS 学習（GAN 有効）"),
     ("preprocess", st_preprocess, "preprocess.run（RMVPE 込み・初回 181MB DL）"),
     ("svs-pp", st_svs_pp, "前処理出力で学習"),
@@ -212,9 +245,19 @@ def main() -> int:
     a = ap.parse_args()
 
     if a.device is None:
-        probe = subprocess.run([PY, "-c", "import torch;print(torch.cuda.is_available())"],
-                               cwd=str(ROOT), capture_output=True, text=True)
-        a.device = "cuda" if "True" in probe.stdout else "cpu"
+        # `torch.cuda.is_available()` はドライバの有無しか見ないので、**実際に確保**して確かめる。
+        # driver は生きているのに context 生成が `devices busy or unavailable` で失敗する状態が
+        # 実在し、そこで cuda を選ぶと全ステージが落ちる（このリポジトリの Windows 機で実測）。
+        probe = subprocess.run(
+            [PY, "-c", "import torch;torch.zeros(1,device='cuda');print('CUDA-OK')"],
+            cwd=str(ROOT), capture_output=True, text=True)
+        a.device = "cuda" if "CUDA-OK" in probe.stdout else "cpu"
+
+    if a.device == "cpu":
+        # **CPU 実行では CUDA を完全に隠す。** torch 2.13 の optimizer は step() のたびに
+        # `torch.accelerator.current_stream()` を呼ぶので、CPU の tensor しか無くても
+        # 壊れた CUDA に触りにいって落ちる。`""` では効かず `-1` が要る（実測）。
+        _ENV["CUDA_VISIBLE_DEVICES"] = "-1"
 
     work = Path(a.work).resolve()
     if work.exists():

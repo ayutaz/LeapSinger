@@ -205,6 +205,19 @@ def _rand_window(tensors, win: int):
     return [x[..., s:s + win] for x in tensors]
 
 
+def _loader_kwargs(device, num_workers: int) -> dict:
+    """DataLoader の追加引数。**pin_memory は CUDA のときだけ有効にする。**
+
+    CPU 実行や GPU が使えない環境で `pin_memory=True` にすると、バッチを取り出す瞬間に
+    `CUDA error: CUDA-capable device(s) is/are busy or unavailable` で落ちる（実測）。
+    `--device cpu` は GPU の無い環境と疎通確認のための経路なので、ここは device で決める。
+    """
+    kw = {"pin_memory": torch.device(device).type == "cuda"}
+    if num_workers > 0:
+        kw.update(persistent_workers=True, prefetch_factor=4)
+    return kw
+
+
 def main():
     ap = argparse.ArgumentParser(description="Train the LeapSinger acoustic model with a light GAN.")
     ap.add_argument("--config", required=True)
@@ -294,12 +307,9 @@ def main():
     sampler = FrameBasedBatchSampler(train_ds.frame_counts, tr.get("max_batch_frames", 60000),
                                      tr.get("max_batch_size", 16), shuffle=True, weights=_weights)
     _nw = tr.get("num_workers", 2)
-    _dl_kw = dict(pin_memory=True)
-    if _nw > 0:
-        _dl_kw.update(persistent_workers=True, prefetch_factor=4)
     collate_fn = svc_collate_fn if is_svc else acoustic_collate_fn
     loader = DataLoader(train_ds, batch_sampler=sampler, collate_fn=collate_fn,
-                        num_workers=_nw, **_dl_kw)
+                        num_workers=_nw, **_loader_kwargs(device, _nw))
 
     opt_name = tr.get("optimizer", "radam")
     Opt = torch.optim.RAdam if opt_name == "radam" else torch.optim.AdamW

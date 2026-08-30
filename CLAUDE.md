@@ -62,7 +62,7 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
 
 `run_smoke.py` は 3rd-party API・学習・自動再開・推論・ボコーダー・前処理・ONNX 書き出しまでを 1 コマンドで通し、終了コードが失敗ステージ数になります。**依存やバージョンを変えた後、環境を移した後、学習を始める前に必ず走らせること。** 入力は合成波形なので品質の検証にはならず、配線が壊れていないことだけを示します。
 
-`uv sync` 済みの環境なら `uv run python -m unittest discover` も通ります。ただし top-level の `test_*.py` は `test_svc_model.py` だけなので、収集される 10 件は上と同じです（preprocess / export / 既存 SVS 経路に自動テストはありません）。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗するので、その場合は `test_svc_model.py` を直接指定してください。
+単体テストは **152 件**（`test_svc_model` 10 / `test_svc_preprocess` 84 / `test_svc_dataset` 58）で、重いモデルもネットワークも使いません。`unittest discover` は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。上の 3 本を明示的に並べるか、`run_smoke.py` の `unittest` ステージを使ってください。後者は top-level の `test_*.py` を自動収集し、件数を表示します。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗します。
 
 ONNX / OpenUTAU 書き出し（SVS のみ。実験的）:
 
@@ -103,15 +103,15 @@ yaml は `mel` / `model` / `excitation` / `train` / `gan` / `data` の 6 セク�
 ### SVC のデータ契約（厳格）
 
 ```text
-data/<db>/metadata.json     # {"content_dim": 768, "phrases": {"<name>": <frames>}}
+data/<db>/metadata.json     # {"content_dim": 256, "frame_rate": 172.265625, "phrases": {"<name>": <frames>}}
 data/<db>/svc_shard.npz     # <name>|content [T,C] / |f0_interp [T] / |uv [T] / |loudness [T] / |mel [128,T]
 ```
 
 **すべての `T` は完全一致させます。** loader（`svc_dataset.py`）は暗黙の transpose や補間を行わず、幅・フレーム数の不一致を例外にします。この「黙って直さない」性質は前処理ミスを早期に露出させるための設計なので、緩めないこと。
 
-**`content_dim` は 256 になる予定です。** `doc/svc-content-encoder.md` の決定により、ContentVec 768 次元から固定ランダムに選んだ **256 次元**を shard に書きます（生の 768 は 1 段目の cache に残す）。**loader に切り出しをさせません** — 「黙って直さない」契約を崩すためです。`configs/svc_base.yaml` の `content_dim: 768` は抽出器が入るまでの暫定値で、`build_shard` の実装と同時に 256 へ変更します。
+**`content_dim` は 256 です。** `doc/svc-content-encoder.md` の決定により、ContentVec 768 次元から固定ランダムに選んだ **256 次元**を shard に書きます（生の 768 は 1 段目の cache に残るので、部分集合を変える ablation は 2 段目の再実行だけで回せます）。**loader に切り出しをさせません** — 「黙って直さない」契約を崩すためです。`configs/svc_base.yaml` も `content_dim: 256` です。
 
-**WAV から shard を生成する経路は実装途中です。** `preprocess/svc/` に部品が揃っています。
+**WAV から shard を生成する経路は実装済みです。** `preprocess/svc/` の構成:
 
 | モジュール | 役割 |
 |---|---|
@@ -119,8 +119,7 @@ data/<db>/svc_shard.npz     # <name>|content [T,C] / |f0_interp [T] / |uv [T] / 
 | `subset.py` | ContentVec 768 -> **256 次元**の部分集合（seed 0 が既定。index を manifest へ） |
 | `loudness.py` | フレーム log-RMS（**mel とフレーム数が一致**）と dataset 統計での正規化 |
 | `audit.py` / `coverage.py` / `split.py` / `report.py` | M0 の素材検査・音域と技法の集計・group 単位 split |
-
-| `chunk.py` | 長い曲を固定長の phrase へ切る。**有声率が `--min-voiced` 未満の chunk は捨てる**（イントロが丸ごと無声になるため。実測で 89 phrase 中 35 件が該当） |
+| `chunk.py` | 長い曲を固定長の phrase へ切る。**有声率が `--min-voiced` 未満の chunk は捨てる**（イントロが丸ごと無声になるため。実測では 89 chunk 中 39 件が除外され、うち 35 件は完全に無声だった） |
 | `extract.py` / `encoders.py` | 1 段目。ContentVec と RMVPE を**引数で受け取り**、`{content, f0_hz, uv, loudness, mel}` を返す |
 | `shard.py` | 2 段目。整列・部分集合・正規化を当てて `svc_shard.npz` を書く。`features_to_item()` は推論側に同じ正規化を当てる |
 | `run.py` | CLI。`--from-cache` で 2 段目だけ再実行できる |
@@ -163,6 +162,9 @@ hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の 
 ## 既知の落とし穴
 
 - `train.py` は **gradient accumulation を実装していません**。config に `accum_steps: 2` があっても無視されます（互換のために残されている値）。実効 batch を増やす提案をする際はこの前提を確認すること。
+- **ローカルの GPU は `nvidia-smi` が正常に見えても context 生成に失敗することがあります**（`CUDA error: CUDA-capable device(s) is/are busy or unavailable`）。`torch.cuda.is_available()` は driver の有無しか見ないので **True を返しても使えるとは限りません**。判定するなら `torch.zeros(1, device="cuda")` を実際に確保すること。この状態では推論スクリプトも落ちるので `--device cpu` で回します。
+- **CPU で回すときは `CUDA_VISIBLE_DEVICES=-1` を渡すこと。** torch 2.13 の optimizer は `step()` ごとに `torch.accelerator.current_stream()` を呼ぶため、CPU tensor しか無くても壊れた CUDA に触って落ちます。**`""` では効かず `-1` が要ります。** `run_smoke.py --device cpu` は自動で渡します。`train.py` の `pin_memory` も `_loader_kwargs()` で CUDA のときだけ有効です（回帰テストは `test_svc_model.LoaderKwargsTests`）。
+- **`tools/smoke/` の合成データは `configs/svc_base.yaml` の `model.content_dim` を読んで作ります。** ここを定数に戻すと、config を変えたときに SVC の学習・再開・推論ステージが黙って落ちます（実際に起きました）。
 - SVC では online `pitch_aug` を使えません（特徴量が事前計算済みのため）。`train.py` が明示的に SystemExit します。augmentation は特徴量抽出前に行います。
 - **学習はすべて vast.ai の Linux インスタンスで行います。手元の Windows で `train.py` を起動すると device によらず hook が止めます**（`tools/hooks/guard_commands.py` の `check_local_training`）。`--device cpu` に逃げるのも不可です。CPU は実測で 1 phrase 1200 step に約 60 分かかり、実験記録の環境も本番と食い違います。ローカル GPU は他の作業と取り合って `unspecified launch failure` を起こしました（実際に発生）。 手元の Windows 機は開発・推論・検証用で、セットアップは `tools/vast_bootstrap.sh`。API token 等は `.env`（gitignore 済み）に置きます。`uv.lock` は Linux も解決済みで、Linux では `triton` が入るため下の `torch.compile` の制約は当てはまりません。
 - **Windows では `torch.compile` が使えません。** `harmonic_excitation.py` の倍音和は compile 前提の融合版（Linux + Triton で 3〜4 倍）ですが、Windows には Triton wheel がなく、さらに日本語ロケール（cp932）では inductor の template 読み込み自体が `UnicodeDecodeError` になります。`triton-windows` を入れても C コンパイラが必要です。コードは **compile 生成時と初回呼び出しの両方**でループ版へフォールバックします（数値差は加算順のみ）。最初から切るなら `LEAPSINGER_EXC_COMPILE=0`。

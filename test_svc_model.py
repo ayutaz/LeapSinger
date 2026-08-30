@@ -218,3 +218,32 @@ class SVCCollateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LoaderKwargsTests(unittest.TestCase):
+    """DataLoader の追加引数。**pin_memory は CUDA のときだけ**。
+
+    `--device cpu` でも `pin_memory=True` にすると、バッチを取り出す瞬間に
+    `torch.AcceleratorError: CUDA error: CUDA-capable device(s) is/are busy or unavailable`
+    で落ちます（GPU が他の作業と取り合っている Windows 機で実測）。CPU 実行と
+    GPU の無い環境は `tools/smoke/run_smoke.py --device cpu` が通る前提なので、
+    ここが壊れると疎通確認そのものが回らなくなります。
+    """
+
+    def test_pin_memory_is_off_for_cpu(self):
+        from train import _loader_kwargs
+        self.assertFalse(_loader_kwargs("cpu", 0)["pin_memory"])
+
+    def test_pin_memory_is_on_for_cuda(self):
+        from train import _loader_kwargs
+        self.assertTrue(_loader_kwargs("cuda", 0)["pin_memory"])
+
+    def test_accepts_a_torch_device_too(self):
+        from train import _loader_kwargs
+        self.assertFalse(_loader_kwargs(torch.device("cpu"), 0)["pin_memory"])
+
+    def test_worker_options_only_when_workers_are_used(self):
+        from train import _loader_kwargs
+        self.assertNotIn("persistent_workers", _loader_kwargs("cpu", 0))
+        self.assertTrue(_loader_kwargs("cpu", 2)["persistent_workers"])
+        self.assertEqual(_loader_kwargs("cpu", 2)["prefetch_factor"], 4)

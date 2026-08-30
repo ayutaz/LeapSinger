@@ -28,6 +28,7 @@ from leapsinger.config import MelSpec
 from .chunk import chunk_spans, voiced_ratio
 from .encoders import ContentVecEncoder, RmvpeF0
 from .extract import extract_phrase
+from .loudness import loudness_manifest
 from .shard import build_shard
 
 _SAFE = re.compile(r"[^0-9A-Za-z_-]+")
@@ -101,6 +102,7 @@ def stage_extract(args, mel: MelSpec) -> Path:
                     "chunk_sec": args.chunk_sec, "min_sec": args.min_sec,
                     "min_voiced": args.min_voiced, "skipped_unvoiced": n_skipped,
                     "mel": mel.to_dict(),
+                    **loudness_manifest(hop=mel.hop, n_fft=mel.n_fft),
                     **encoder.manifest(), **f0x.manifest()},
                    ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"[extract] {len(wavs)} files -> {n_phrases} phrases "

@@ -36,6 +36,7 @@ uv run python tools/smoke/run_smoke.py --keep                # 失敗調査用�
 | `libs` | librosa / scipy / onnxruntime / matplotlib / TensorBoard の API 変更 |
 | `gen` | mel 計算（librosa 経路）そのもの |
 | `svc-train` / `svs-train` | 学習ループ、励起、flow、GAN 判別器 |
+| `svc-pp` | SVC 前処理 CLI の 2 段目。shard 契約、**再実行での bit 一致**、実 loader が読めること |
 | `svc-resume` | `torch.load` の既定（weights_only）変更と自動再開 |
 | `svc-infer` / `svs-infer` | checkpoint 復元、mel 生成、NHVSing ONNX、WAV 出力 |
 | `preprocess` | librosa.load、RMVPE、phrase 分割、shard 契約 |
@@ -59,3 +60,24 @@ uv run python tools/smoke/run_smoke.py --keep                # 失敗調査用�
 - **`preprocess` の初回は RMVPE の重み 181MB をダウンロードする。** ネットワークが無いなら
   `--skip preprocess svs-pp svs-infer`。
 - `.smoke/` は `.gitignore` 対象。コミットしない。
+- **`--only` で一部だけ走らせるときは、依存する前段も一緒に指定する。** `gen` を飛ばすと
+  `svc-train` は「データが無い」で落ちる。これは環境の問題ではない。
+
+## 実際に踏んだ落とし穴（2026-08-30）
+
+**確認済み:** 「unittest ステージだけ見て通ったことにする」と、次を見落とします。
+**必ず全ステージの PASS/FAIL を読むこと。**
+
+| 事象 | 原因 | 対処 |
+|---|---|---|
+| `--device cpu` なのに `CUDA error: devices busy or unavailable` で学習ステージが全滅 | ① `train.py` が device によらず `pin_memory=True`。② torch 2.13 の optimizer が `step()` ごとに `torch.accelerator.current_stream()` を呼び、**CPU tensor しか無くても壊れた CUDA に触る** | ① `_loader_kwargs()` で CUDA のときだけ有効に（回帰テストあり）。② `--device cpu` のとき `CUDA_VISIBLE_DEVICES=-1` を全サブプロセスへ渡す |
+| SVC の学習・再開・推論が `model.content_dim=256 but dataset content_dim=768` で落ちる | `configs/svc_base.yaml` を 256 に変えたのに、smoke の合成データが 768 のままだった | `gen_synth_data.py` が **config から読む**ようにした |
+| device 自動判定が cuda を選ぶのに、そのあと全部落ちる | 判定が `torch.cuda.is_available()`（driver の有無しか見ない）だった | **実際に `torch.zeros(1, device='cuda')` を確保**して判定する |
+
+**教訓 3 つ。**
+
+1. 合成データを作る側に定数を置くと、config を変えたときに黙って乖離する。**smoke の入力は
+   実際の config から導出する。**
+2. **`torch.cuda.is_available()` は「使える」を意味しない。** driver が生きていても context 生成が
+   失敗する状態は実在する（`nvidia-smi` は正常に見える）。確保して確かめること。
+3. **`CUDA_VISIBLE_DEVICES=""` では効かない。`-1` が要る**（空文字は「未設定」として扱われる）。

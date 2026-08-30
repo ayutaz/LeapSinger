@@ -127,6 +127,9 @@ def build_shard(phrases: Mapping[str, Mapping[str, Any]], out_dir, *,
         "frame_rate": float(frame_rate),
         "loudness_mean": float(mean),
         "loudness_std": float(std),
+        # 「正規化単位」（M1 ゴール 5）。mean/std だけでは phrase 単位か dataset 単位か
+        # 分からない。決定は dataset 統計なので値として残す。
+        "loudness_normalization": "dataset_zscore",
         "n_phrases": len(frames),
         "total_frames": int(sum(frames.values())),
     }

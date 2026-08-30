@@ -117,8 +117,10 @@ left は他方式に対して劣る点がありません。nearest と linear �
 ずれます。linear はさらに 99.4% のフレームを混ぜ、ContentVec の表現空間に実在しないベクトルを作ります。
 so-vits-svc の `repeat_expand_2d` の既定 `mode='left'` とも一致します。
 
-**決定:** 256 次元の部分集合は **seed 0 を既定**とし、M2 の overfit で seed 1 と比較します。
+**決定:** 256 次元の部分集合は **seed 0 を既定**とします。
 Interspeech 2025 の 2 つの部分集合は SSIM 0.813 / 0.822 と小さいながら差がありました。
+**未実施:** seed 1 との比較。M2 では実施せず、**M3 の本学習の前**に 1 度だけ確かめます
+（shard は両方あり、2 段目の再実行だけで作れます）。
 
 **未決:** layer 12 は so-vits-svc の `vec768l12` に合わせた既定値だが、
 `content-vec-best` の final projection 出力との対応は実装時に実際の shape で確認する。

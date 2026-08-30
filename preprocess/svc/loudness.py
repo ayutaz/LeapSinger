@@ -16,8 +16,26 @@ from typing import Iterable, Sequence
 import numpy as np
 
 
+FLOOR = 1e-5           # 無音（RMS = 0）で -inf にしないための下限。mel 側の clamp と同じ値
+
+
+def loudness_manifest(*, hop: int, n_fft: int, floor: float = FLOOR) -> dict:
+    """loudness の**定義**を manifest 用の dict で返す（実行計画 M1 ゴール 5）。
+
+    mean / std だけでは、後から窓幅や floor を変えたときに古い shard と見分けがつきません。
+    抽出条件は以降の全実験の比較基盤になるので、窓幅・hop・floor・定義そのものを残します。
+    """
+    return {
+        "loudness_definition": "frame log-RMS (natural log), mel framing "
+                               "(center=False + reflect pad (n_fft-hop)//2)",
+        "loudness_n_fft": int(n_fft),
+        "loudness_hop": int(hop),
+        "loudness_floor": float(floor),
+    }
+
+
 def frame_log_rms(wav: np.ndarray, *, hop: int, n_fft: int,
-                  floor: float = 1e-5) -> np.ndarray:
+                  floor: float = FLOOR) -> np.ndarray:
     """`wav` -> フレームごとの自然対数 RMS `[T]`。`T` は同じ設定の mel と一致します。
 
     `floor` は無音（RMS = 0）で `-inf` にならないための下限で、mel 側の clamp と同じ値です。

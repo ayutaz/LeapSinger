@@ -28,10 +28,11 @@
 | [`preprocess/svc/shard.py`](../preprocess/svc/shard.py) | 実装済み | M1 の 2 段目。`svc_shard.npz` を**決定的に**書く。`features_to_item()` |
 | [`preprocess/svc/run.py`](../preprocess/svc/run.py) | 実装済み | M1 の CLI。`--from-cache` で 2 段目だけ再実行 |
 | [`tools/m2_verify.py`](../tools/m2_verify.py) | 追加済み | M2 の検証（長さ・F0 追従・V/UV・再現性を測る） |
+| [`tools/nhv_indist.py`](../tools/nhv_indist.py) | 追加済み | M0 ゴール 4。コーパスが NHVSing にとって in-distribution かを再合成忠実度で測る |
 | [`test_svc_preprocess_integration.py`](../test_svc_preprocess_integration.py) | 追加済み | 実モデルを使う統合テスト（既定 skip） |
-| [`test_svc_preprocess.py`](../test_svc_preprocess.py) | 追加済み | align / subset / loudness の契約テスト（32 件） |
+| [`test_svc_preprocess.py`](../test_svc_preprocess.py) | 追加済み | 整列 / 部分集合 / loudness / shard / 抽出 / chunk / 命名の契約テスト（84 件） |
 | [`test_svc_dataset.py`](../test_svc_dataset.py) | 追加済み | audit / coverage / split / report の契約テスト（58 件） |
-| [`tools/smoke/`](../tools/smoke/) | 追加済み | 全経路の疎通を 1 コマンドで回す（11 ステージ） |
+| [`tools/smoke/`](../tools/smoke/) | 追加済み | 全経路の疎通を 1 コマンドで回す（12 ステージ） |
 | [`tools/hooks/`](../tools/hooks/) | 追加済み | 常に誤りのコマンドを実行前に止める guard と回帰テスト |
 | [`tools/vast.py`](../tools/vast.py) / [`tools/vast_bootstrap.sh`](../tools/vast_bootstrap.sh) | 追加済み | vast.ai インスタンスの操作と初期化 |
 | `.claude/skills/` | 追加済み | 疎通確認 / 学習実験 / 文書更新 / TDD / vast.ai の手順 |
@@ -55,18 +56,23 @@ data/<db>/svc_shard.npz
 
 ```json
 {
-  "content_dim": 768,
+  "content_dim": 256,
+  "frame_rate": 172.265625,
   "phrases": {
-    "song01_phrase000": 512
+    "song01_0000": 512
   }
 }
 ```
+
+`content_dim` は **ContentVec 768 次元から固定ランダムに選んだ 256 次元**です（[選定](svc-content-encoder.md)）。
+切り出しは前処理が行い、**loader にはさせません**（「黙って直さない」契約を崩すため）。生の 768 次元は
+1 段目の cache に残るので、部分集合を変える ablation は 2 段目の再実行だけで回せます。
 
 `svc_shard.npz`:
 
 | key | required shape | dtype の想定 |
 |---|---:|---|
-| `<name>|content` | `[T, 768]` | float32 |
+| `<name>|content` | `[T, content_dim]`（既定 256） | float32 |
 | `<name>|f0_interp` | `[T]` | float32 Hz |
 | `<name>|uv` | `[T]` | float32 / bool compatible |
 | `<name>|loudness` | `[T]` | float32 |
@@ -82,7 +88,7 @@ loader は feature width、mel bins、全配列の `T` を検証し、暗黙 tra
 |---|---:|
 | sample rate / hop | 44,100 / 256 |
 | mel bins | 128 |
-| content dimension | 768 |
+| content dimension | 256 |
 | hidden / backbone channels | 256 / 256 |
 | speakers | 1 |
 | UV | enabled |
@@ -96,10 +102,15 @@ loader は feature width、mel bins、全配列の `T` を検証し、暗黙 tra
 ## 4. 学習例
 
 ```bash
-uv run python -m train --config configs/svc_base.yaml \n  --data_dirs data/target \n  --run_name svc_target \n  --out_root log \n  --device cuda
+uv run python -m preprocess.svc.run --wav-dir download/ritsu --out data/target --device cuda
+uv run python -m train --config configs/svc_base.yaml \
+  --data_dirs data/target \
+  --run_name svc_target \
+  --out_root log \
+  --device cuda
 ```
 
-実行前に repository 内にない `svc_shard.npz` を外部で準備する必要があります。base と fine-tune は別 `run_name` を使います。
+1 行目が WAV から shard を作り、2 行目が学習します。base と fine-tune は別 `run_name` を使います。
 
 ## 5. 現在までの検証
 
@@ -142,7 +153,7 @@ Python 3.13 / torch 2.13 / librosa 1.0 へ更新した後、次を上記環境�
 
 ### 確認済み
 
-- 自動テスト **141 件**が成功（`test_svc_model` 10 / `test_svc_preprocess` 73 / `test_svc_dataset` 58）。重いモデルもネットワークも使いません。実モデルの統合テストは 4 件で、`LEAPSINGER_INTEGRATION=1` のときだけ走ります。
+- 自動テスト **152 件**が成功（`test_svc_model` 10 / `test_svc_preprocess` 84 / `test_svc_dataset` 58）。重いモデルもネットワークも使いません。実モデルの統合テストは 4 件で、`LEAPSINGER_INTEGRATION=1` のときだけ走ります。
 - コマンド guard の回帰テスト **37 件**（`tools/hooks/test_guard.py`）。
 - **実音声 5 コーパスへの検査・coverage・split**（M0。下記「M0 の実データ検証」）。
 - padding された frame が有効 frame に影響しないこと。
@@ -175,6 +186,25 @@ Python 3.13 / torch 2.13 / librosa 1.0 へ更新した後、次を上記環境�
 無音閾値が曲全体に合わないこと、音域に関する推測の誤りなど）。**いずれも合成データでは
 出ませんでした。**
 
+### NHVSing にとっての in/out-of-distribution（2026-08-30、M0 ゴール 4）
+
+**確認済み:** ground-truth mel を NHVSing に通した再合成の忠実度を、5 コーパス × 12 clip ×
+6 秒で比較しました（[`tools/nhv_indist.py`](../tools/nhv_indist.py)、詳細と限界は
+[台帳 7b 節](svc-dataset-ledger.md#7b-nhvsing-にとって-in-distribution-かの実測2026-08-30)）。
+
+| コーパス | NHVSing 学習 | mel L1 平均 | F0 半音 | V/UV |
+|---|---|---:|---:|---:|
+| 波音リツ | あり | 0.3470 | 0.019 | 0.989 |
+| 夏目悠李 | あり | 0.2969 | 0.025 | 0.981 |
+| 御丹宮くるみ | あり | 0.3306 | 0.013 | 0.994 |
+| VocalSet | あり | 0.3020 | 0.013 | 0.991 |
+| **GTSinger 日本語** | **なし** | **0.3444** | 0.017 | 0.990 |
+
+**判断:** GTSinger は既知 4 コーパスの散らばり（0.2969〜0.3470）の内側で、target singer の
+波音リツより良い値です。**base を GTSinger にしてよく、NHVSing の追加学習（条件付きトラック B）を
+起動する根拠は現時点でありません。** ただしこれは ground-truth mel の再合成であって、
+学習後の音響モデルが出す mel の分布ではありません（M4 の後に測り直します）。
+
 ### M1 / M2 の実証（2026-08-30）
 
 **確認済み:** WAV から shard を作り、実音声で overfit して WAV を出すところまで通しました。
@@ -197,35 +227,58 @@ Windows で使えなかった `torch.compile` 経路が効きます。
 無声だけの phrase が学習に入っていたこと、CUDA 推論が既定では bit 再現しないこと。
 いずれも合成データでは出ません。
 
+### M2 完了確認で見つかった欠陥（2026-08-30）
+
+**確認済み:** M3 に進む前に M0〜M2 のゴールを 1 つずつ突き合わせたところ、**実装側 2 件・
+記録側 1 件**の欠陥が出ました。いずれも「テストは通るが実際には壊れている」種類です。
+
+| 欠陥 | 影響 | 対処 |
+|---|---|---|
+| smoke の合成 shard が `content_dim=768` 固定で、`configs/svc_base.yaml` は 256 | SVC の**学習・自動再開・推論の 3 ステージが黙って落ちていた** | `gen_synth_data.py` が config から読むように |
+| `train.py` が device によらず `pin_memory=True` にしていた | CPU 実行で不要な CUDA 依存が残る | `_loader_kwargs()` に切り出し、CUDA のときだけ有効に。回帰テスト 4 件 |
+| `--device cpu` でも torch 2.13 の optimizer が `torch.accelerator.current_stream()` を呼ぶ | **CPU 実行が壊れた CUDA に触って落ちる**（GPU の無い環境向けの経路が使えない） | `run_smoke.py` が `--device cpu` のとき `CUDA_VISIBLE_DEVICES=-1` を渡す（`""` では効かない） |
+| smoke の device 自動判定が `torch.cuda.is_available()` | **driver が生きていて context 生成が失敗する状態**で cuda を選び、全ステージが落ちる | 実際に `torch.zeros(1, device="cuda")` を確保して判定 |
+| `run_smoke.py` に SVC 前処理 CLI のステージが無かった | M1 の成果物が疎通確認に含まれていなかった | `svc-pp` ステージを追加（bit 一致と実 loader の読み込みまで） |
+
+**教訓 3 つ。** **合成データ側に定数を置くと config との乖離に気づけない**こと、
+**`torch.cuda.is_available()` は「使える」を意味しない**こと、そして
+**smoke の一部ステージだけを見て「通った」と判断しない**ことです（前回は
+`unittest` ステージの件数だけを確認していました）。
+
+同時に M1 ゴール 5 の manifest も 2 項目足りていませんでした（**F0 extractor の version**と
+**loudness の窓幅・floor・正規化単位**）。RMVPE 重みの sha256 と入手元、loudness の定義を
+記録するようにし、どちらも先に失敗するテストを書いてから実装しています。
+
 ### 制限付き
 
-`uv run python -m unittest discover` は上記環境で成功します。ただし top-level の `test_*.py` は
-`test_svc_model.py` / `test_svc_preprocess.py` / `test_svc_dataset.py` の 3 本で、
-**preprocess / export / 既存 SVS 経路そのものには自動テストがありません**（`tools/smoke/run_smoke.py`
+top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` / `test_svc_dataset.py` の
+3 本（統合テストを除く）で、`run_smoke.py` の `unittest` ステージがこれを自動収集します。
+`unittest discover` 自体は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。
+**SVS の前処理・export・既存 SVS 経路そのものには自動テストがありません**（`tools/smoke/run_smoke.py`
 が疎通を確認するだけです）。
 
 ### 未検証
 
-- 実 WAV から feature shard を生成すること。
-- 実歌唱データで loss が収束すること。
-- checkpoint から WAV を生成し target timbre を確認すること。
+- **実歌唱データで汎化する学習**（確認済みなのは 2 phrase の overfit まで。held-out での収束は未確認）。
+- **target timbre の再現**（WAV は出ているが、音色が target に似ているかは未評価）。
+- 256 次元部分集合の **seed 0 と seed 1 の比較**（[実行計画](svc-plan.md) M1 決定 2。shard は両方ある）。
 - multi-singer base pretraining。
 - SVS checkpoint の安全な部分 warm-start。
 - Seed-VC との客観・主観比較。
 - NHVSing target fine-tune。
 - causal / limited-lookahead model、distillation、streaming I/O。
-- GPU peak memory、throughput、training time。
+- GPU peak memory と長時間 run の training time（throughput は A4000 で 13〜15 step/s を実測済み）。
 - end-to-end RTF / latency / 長時間連続動作。
 
 ## 6. 次の実装順序
 
-1. ContentVec/HuBERT + RMVPE + loudness の再現可能な extractor。
-2. 小さな権利確認済み real-audio fixture と preprocessing smoke。
-3. 1〜数 phrase overfit と WAV 出力。
-4. SVS -> SVC shared-weight warm-start loader と load-report tests。
-5. multi-singer base と target fine-tune。
-6. Seed-VC comparison suite と blind review artifact。
-7. offline gate 後に streaming student。
+1. ~~ContentVec/HuBERT + RMVPE + loudness の再現可能な extractor~~ — **完了**（M1）。
+2. ~~実 audio での preprocessing smoke~~ — **完了**（M1、波音リツ実音声）。
+3. ~~1〜数 phrase overfit と WAV 出力~~ — **完了**（M2）。
+4. multi-singer base と target fine-tune（M3 / M4）。
+5. SVS -> SVC shared-weight warm-start loader と load-report tests（条件付きトラック A。M3 のコストが問題になった場合のみ）。
+6. Seed-VC comparison suite と blind review artifact（M5）。
+7. offline gate 後に streaming student（M6）。
 
 ## 7. ブランチと作業ツリー
 

@@ -100,7 +100,7 @@ data/<dataset>/
 
 すべての `T` は完全一致させます。loader は silent transpose や自動補間をせず、前処理ミスを明示的に失敗させます。
 
-**未実装:** WAV からこの shard を再現可能に生成する repository 内 command。実装時は encoder/model revision、layer、checksum、sample rate、hop、loudness 定義、F0 extractor version を manifest に保存します。
+**確認済み:** WAV からこの shard を再現可能に生成する command は `preprocess.svc.run` として実装済みです。manifest には encoder の id / revision / layer、sample rate、hop、SSL stride、補間方法、loudness の窓幅・floor・正規化単位、F0 extractor の重み checksum と入手元、256 次元部分集合の index と seed、入力 WAV の checksum を保存します。
 
 ## 6. GPU メモリの目安
 

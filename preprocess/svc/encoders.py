@@ -12,6 +12,8 @@
 """
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -19,6 +21,11 @@ import numpy as np
 DEFAULT_CONTENTVEC = "lengyue233/content-vec-best"
 CONTENTVEC_SR = 16000
 CONTENTVEC_STRIDE = 320          # 16 kHz / 320 = 50 Hz
+
+# RMVPE には release version が無く、初回実行時に落ちてくる重み 1 個が実体です。
+# 「F0 extractor の version」（M1 ゴール 5）はこの重みの checksum と入手元で表します。
+RMVPE_WEIGHT_PATH = Path(__file__).resolve().parents[1] / "algorithms" / "rmvpe.pt"
+RMVPE_WEIGHT_URL = "https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/rmvpe.pt"
 
 
 class ContentVecEncoder:
@@ -87,4 +94,19 @@ class RmvpeF0:
         return np.asarray(f0, np.float32), np.asarray(uv, np.float32)
 
     def manifest(self) -> dict[str, Any]:
-        return {"f0_extractor": "rmvpe", "f0_min": self.f0_min, "f0_max": self.f0_max}
+        """M1 ゴール 5 の「F0 extractor の version」。
+
+        `"rmvpe"` という名前は version になりません。重みは初回実行時に落ちてくるので、
+        **重みそのものの sha256 と入手元**を残します。未取得の環境では checksum を
+        `None` にして、manifest 生成自体は落としません（1 段目を回せば必ず存在します）。
+        """
+        digest = None
+        if RMVPE_WEIGHT_PATH.exists():
+            h = hashlib.sha256()
+            with RMVPE_WEIGHT_PATH.open("rb") as f:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    h.update(chunk)
+            digest = h.hexdigest()
+        return {"f0_extractor": "rmvpe", "f0_min": self.f0_min, "f0_max": self.f0_max,
+                "f0_extractor_weight_url": RMVPE_WEIGHT_URL,
+                "f0_extractor_weight_sha256": digest}

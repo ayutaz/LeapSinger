@@ -330,6 +330,12 @@ class BuildShardTests(unittest.TestCase):
         self.assertEqual(m["interpolation"], "left")
         self.assertEqual(len(m["subset_indices"]), self.N_DIMS)
 
+    def test_manifest_records_the_loudness_normalisation_unit(self):
+        # M1 ゴール 5 の「正規化単位」。mean/std だけでは phrase 単位か dataset 単位か
+        # 分からない。決定は dataset 統計なので、その旨を値として残す。
+        m = self._build()
+        self.assertEqual(m["loudness_normalization"], "dataset_zscore")
+
     def test_loudness_is_normalised_with_dataset_statistics(self):
         # phrase 単位ではない。全 phrase を通した平均が 0・標準偏差が 1 に近づく。
         self._build()
@@ -648,3 +654,102 @@ class VoicedRatioTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LoudnessManifestTests(unittest.TestCase):
+    """loudness の**定義**を manifest に残す。
+
+    実行計画 M1 ゴール 5 は「loudness の定義（窓幅・floor・正規化単位）」を manifest に
+    要求します。mean/std だけでは、窓幅や floor を後から変えたときに古い shard と
+    見分けがつきません。抽出条件は以降の全実験の比較基盤なので、値そのものを残します。
+    """
+
+    def test_records_the_window_hop_and_floor(self):
+        from preprocess.svc.loudness import loudness_manifest
+        m = loudness_manifest(hop=256, n_fft=2048)
+        self.assertEqual(m["loudness_n_fft"], 2048)
+        self.assertEqual(m["loudness_hop"], 256)
+        self.assertIn("loudness_floor", m)
+        self.assertIn("loudness_definition", m)
+
+    def test_the_recorded_floor_is_the_one_frame_log_rms_actually_uses(self):
+        # manifest が実装と食い違ったら、記録の意味が無くなる。
+        from preprocess.svc.loudness import loudness_manifest
+        floor = loudness_manifest(hop=256, n_fft=2048)["loudness_floor"]
+        silence = frame_log_rms(np.zeros(22050, dtype=np.float32), hop=256, n_fft=2048)
+        self.assertAlmostEqual(float(silence[0]), math.log(floor), places=5)
+
+    def test_records_an_explicit_floor_when_one_is_given(self):
+        from preprocess.svc.loudness import loudness_manifest
+        m = loudness_manifest(hop=256, n_fft=2048, floor=1e-4)
+        self.assertAlmostEqual(m["loudness_floor"], 1e-4)
+
+
+class RmvpeManifestTests(unittest.TestCase):
+    """F0 抽出器の **version** を manifest に残す（M1 ゴール 5）。
+
+    `"rmvpe"` という名前だけでは version になりません。RMVPE の重みは初回実行時に
+    HuggingFace から落ちてくるので、**重みそのものの checksum と入手元**を残します。
+    重みが未取得の環境でも manifest 生成が落ちないこと（記録は残す）。
+    """
+
+    def test_records_the_weight_source_and_checksum(self):
+        from preprocess.svc.encoders import RmvpeF0
+        m = RmvpeF0().manifest()
+        self.assertEqual(m["f0_extractor"], "rmvpe")
+        self.assertIn("f0_extractor_weight_url", m)
+        self.assertIn("f0_extractor_weight_sha256", m)
+
+    def test_the_checksum_matches_the_weight_file_when_it_exists(self):
+        import hashlib
+        from preprocess.svc.encoders import RMVPE_WEIGHT_PATH, RmvpeF0
+        if not RMVPE_WEIGHT_PATH.exists():
+            self.skipTest("RMVPE の重みが未取得")
+        h = hashlib.sha256(RMVPE_WEIGHT_PATH.read_bytes()).hexdigest()
+        self.assertEqual(RmvpeF0().manifest()["f0_extractor_weight_sha256"], h)
+
+
+class SongNameTests(unittest.TestCase):
+    """WAV のパス -> phrase 名の `{song}` 部分（M1 ゴール 3）。
+
+    `dataset.py` の `_song_of()` は末尾の `_NNNN` を落として曲名にします。`song_name()` の
+    出力が `_NNNN` で終わると曲名の一部まで削られ、**別の曲が同じ曲名に潰れて
+    train/eval 分割の leakage 防止が効かなくなります**。往復することを契約にします。
+    """
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="songname_"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+
+    def _name(self, rel: str) -> str:
+        from preprocess.svc.run import song_name
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+        return song_name(path, self.root)
+
+    def test_the_phrase_name_round_trips_through_song_of(self):
+        from dataset import _song_of
+        for rel in ("song_a/vocal.wav", "01_intro.wav", "track_0001/vocal.wav",
+                    "曲 名 (2)/x.wav", "sample_12345.wav"):
+            with self.subTest(rel=rel):
+                song = self._name(rel)
+                self.assertEqual(_song_of(f"{song}_0000"), song)
+
+    def test_uses_the_parent_directory_when_the_file_sits_in_one(self):
+        self.assertEqual(self._name("kokoronashi/vocal.wav"), "kokoronashi")
+
+    def test_uses_the_file_stem_at_the_root(self):
+        self.assertEqual(self._name("kokoronashi.wav"), "kokoronashi")
+
+    def test_different_songs_do_not_collide(self):
+        # 潰れると別の曲が同じ曲名になり、曲単位 split が leakage する。
+        a = self._name("song_0001/vocal.wav")
+        b = self._name("song_0002/vocal.wav")
+        self.assertNotEqual(a, b)
+
+    def test_strips_characters_that_are_unsafe_in_an_npz_key(self):
+        # shard の key は `<name>|content`。名前に区切り文字や空白が混ざると key が壊れる。
+        # ここでは Windows でも作れる文字だけを使う（`|` はパスに使えない）。
+        name = self._name("さよならの夏 (歌集バージョン)/vocal.wav")
+        self.assertRegex(name, r"^[0-9A-Za-z_-]+$")

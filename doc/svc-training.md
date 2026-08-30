@@ -113,11 +113,19 @@ streaming student は offline teacher と同じ test set で比較し、品質�
 
 **注意:** インスタンスのディスクは揮発します。`log/<run>/ckpt_*.pt` と TensorBoard の events は実験記録の一部なので、実験中に外部ストレージへ退避します。
 
-現在の実装が受け取る target-singer 学習例です。`svc_shard.npz` はまだ repository 内 command では生成できません。
+shard の生成から学習までの例です。前処理は 2 段構成で、`--from-cache` を使えば 2 段目
+（整列・正規化・256 次元の切り出し）だけを回せます。
 
 ```bash
-uv run python -m train --config configs/svc_base.yaml \n  --data_dirs data/target \n  --run_name svc_target \n  --out_root log \n  --device cuda
+uv run python -m preprocess.svc.run --wav-dir download/ritsu --out data/target --device cuda
+uv run python -m train --config configs/svc_base.yaml \
+  --data_dirs data/target \
+  --run_name svc_target \
+  --out_root log \
+  --device cuda
 ```
+
+`--from-cache <out>/_cache` を渡すと 2 段目だけを回せます。
 
 multi-singer の場合は `model.n_speakers`、`data.spk_map`、`train.balance_speakers` を corpus に合わせます。
 

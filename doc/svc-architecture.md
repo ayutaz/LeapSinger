@@ -37,7 +37,7 @@ source F0 + V/UV -> harmonic/noise excitation -> pseudo mel x0
 
 **決定:** ContentVec（`lengyue233/content-vec-best`、MIT、768 次元、layer 12）を採用し、学習には 768 から固定ランダムに選んだ 256 次元を使います。候補比較と根拠は [content encoder の選定](svc-content-encoder.md)。
 
-**決定:** mel grid への整列は **left（直前保持・左寄せ繰り返し）**。先読み 0 ms かつ元の SSL ベクトルを保持し、nearest（先読み 20 ms）や linear（先読み 20 ms・99.4% がブレンド）より劣る点がありません（[実測](svc-content-encoder.md) 6 節）。256 次元部分集合は **seed 0 を既定**とし、M2 で seed 1 と比較します。いずれも再現性に直結するため、**選ばれた index そのもの**を manifest へ記録します。
+**決定:** mel grid への整列は **left（直前保持・左寄せ繰り返し）**。先読み 0 ms かつ元の SSL ベクトルを保持し、nearest（先読み 20 ms）や linear（先読み 20 ms・99.4% がブレンド）より劣る点がありません（[実測](svc-content-encoder.md) 6 節）。256 次元部分集合は **seed 0 を既定**とします（seed 1 との比較は M3 の前に実施）。いずれも再現性に直結するため、**選ばれた index そのもの**を manifest へ記録します。
 
 **リスク:** SSL feature に source timbre が残ると、target singer への変換を妨げます。pitch/formant augmentation、speaker-adversarial loss、feature retrieval、encoder/layer の比較を候補とします。
 
