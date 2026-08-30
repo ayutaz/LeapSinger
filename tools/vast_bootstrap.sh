@@ -105,7 +105,7 @@ if not active:
 PY
 
 say "8. 単体テスト"
-uv run python -m unittest test_svc_model
+uv run python -m unittest test_svc_model test_svc_preprocess test_svc_dataset
 
 if [ "$RMVPE" = "1" ]; then
   say "9. RMVPE の重み (前処理用・約181MB)"
