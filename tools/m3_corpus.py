@@ -136,10 +136,17 @@ def download_gtsinger(dest: Path, langs: list[str], per_singer: int) -> None:
 
 
 def download_jp() -> None:
-    for script in ("download_ritsu.py", "download_natsume.py", "download_oniku.py"):
-        print(f"[download] {script}", flush=True)
-        subprocess.run([sys.executable, "-m",
-                        f"preprocess.download_scripts.{script[:-3]}"], cwd=str(ROOT), check=False)
+    """日本語 3 DB。波音リツは 3 音源すべて（同じ歌手の別の声質）。"""
+    # **スクリプトのパスで実行する。** `-m` だと `_gdrive` の兄弟 import が解決できず
+    # `ModuleNotFoundError: No module named '_gdrive'` になる（README もパス形式）。
+    jobs = [("download_ritsu.py", ["--voice", "all"]),
+            ("download_natsume.py", []), ("download_oniku.py", [])]
+    for script, extra in jobs:
+        print(f"[download] {script} {' '.join(extra)}", flush=True)
+        p = subprocess.run([sys.executable,
+                            str(ROOT / "preprocess" / "download_scripts" / script), *extra],
+                           cwd=str(ROOT))
+        print(f"[download] {script}: exit {p.returncode}", flush=True)
 
 
 def extract(entry: dict, out_root: Path, args) -> bool:
