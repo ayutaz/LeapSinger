@@ -47,6 +47,7 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
 
     uv run python tools/smoke/run_smoke.py     # 全経路の疎通（合成音声・GPU で約3分）
     uv run python -m unittest test_svc_model -v
+    uv run python -m unittest test_svc_preprocess -v  # SVC 特徴抽出前処理（重いモデル不要）
     uv run python -m unittest test_svc_model.HarmonicSVCModelTests.test_forward_and_infer_reuse_flow_with_svc_conditioning
     uv run python tools/hooks/test_guard.py    # コマンド guard の回帰テスト
 
