@@ -7,13 +7,18 @@
 """
 from __future__ import annotations
 
+import json
 import math
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
 from leapsinger.mel import wav_to_mel_nhv
 from preprocess.svc.align import align_left
+from preprocess.svc.shard import build_shard
 from preprocess.svc.loudness import dataset_stats, frame_log_rms, normalize_with_stats
 from preprocess.svc.subset import apply_subset, subset_indices
 
@@ -242,6 +247,132 @@ class DatasetStatsTests(unittest.TestCase):
     def test_normalization_returns_float32(self):
         out = normalize_with_stats(np.zeros(4, dtype=np.float32), 0.0, 1.0)
         self.assertEqual(out.dtype, np.float32)
+
+
+class BuildShardTests(unittest.TestCase):
+    """cache（生の特徴）-> `svc_shard.npz` の 2 段目。
+
+    実行計画 M1。**この段だけを再実行すれば補間方法と 256 次元 seed の ablation ができる**
+    ように、重い抽出（ContentVec / RMVPE）とは分けています。
+    """
+
+    SR, HOP, N_MELS = 44100, 256, 128
+    C_IN, N_DIMS = 768, 256
+    FR = SR / HOP
+
+    def setUp(self):
+        self.out = Path(tempfile.mkdtemp(prefix="shard_"))
+        self.addCleanup(shutil.rmtree, self.out, ignore_errors=True)
+
+    def _phrase(self, t_mel, seed=0):
+        """mel フレーム数 t_mel の 1 phrase。content は SSL の 50 Hz なので短い。"""
+        r = np.random.default_rng(seed)
+        t_ssl = max(1, round(t_mel * 50.0 / self.FR))
+        return {
+            "content": r.standard_normal((t_ssl, self.C_IN)).astype(np.float32),
+            "f0_hz": (220.0 + 10 * r.standard_normal(t_mel)).astype(np.float32),
+            "uv": (r.random(t_mel) > 0.3).astype(np.float32),
+            "loudness": (-3.0 + r.standard_normal(t_mel)).astype(np.float32),
+            "mel": r.standard_normal((self.N_MELS, t_mel)).astype(np.float32) - 5.0,
+        }
+
+    def _phrases(self, sizes=(206, 258, 310)):
+        return {f"song{i//2:02d}_{i:04d}": self._phrase(t, seed=i)
+                for i, t in enumerate(sizes)}
+
+    def _build(self, phrases=None, **kw):
+        phrases = phrases if phrases is not None else self._phrases()
+        opts = dict(n_dims=self.N_DIMS, subset_seed=0, frame_rate=self.FR)
+        opts.update(kw)
+        return build_shard(phrases, self.out, **opts)
+
+    def test_writes_the_shard_and_metadata(self):
+        self._build()
+        self.assertTrue((self.out / "svc_shard.npz").exists())
+        self.assertTrue((self.out / "metadata.json").exists())
+
+    def test_every_array_of_a_phrase_has_the_mel_frame_count(self):
+        # 契約の中核。loader は暗黙に直さないので、ここがずれると学習が始まらない。
+        phrases = self._phrases()
+        self._build(phrases)
+        z = np.load(self.out / "svc_shard.npz")
+        for name, p in phrases.items():
+            t = p["mel"].shape[1]
+            self.assertEqual(z[f"{name}|content"].shape, (t, self.N_DIMS), name)
+            for key in ("f0_interp", "uv", "loudness"):
+                self.assertEqual(z[f"{name}|{key}"].shape, (t,), f"{name}|{key}")
+            self.assertEqual(z[f"{name}|mel"].shape, (self.N_MELS, t), name)
+
+    def test_the_shard_is_readable_by_the_real_loader(self):
+        # 最も強い検証: 実際の SVCFeatureDataset が例外なく読めること。
+        from svc_dataset import SVCFeatureDataset
+        self._build()
+        ds = SVCFeatureDataset([str(self.out)], split="train", eval_songs=0)
+        self.assertGreater(len(ds), 0)
+        item = ds[0]
+        self.assertEqual(item["content"].shape[1], self.N_DIMS)
+
+    def test_metadata_declares_the_written_content_dim(self):
+        self._build()
+        meta = json.loads((self.out / "metadata.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["content_dim"], self.N_DIMS)
+        self.assertAlmostEqual(meta["frame_rate"], self.FR, places=6)
+        self.assertEqual(sorted(meta["phrases"]), sorted(self._phrases()))
+
+    def test_manifest_records_what_is_needed_to_reproduce(self):
+        m = self._build()
+        for key in ("subset_indices", "subset_seed", "n_dims", "interpolation",
+                    "loudness_mean", "loudness_std", "frame_rate", "content_dim_in"):
+            self.assertIn(key, m, key)
+        self.assertEqual(m["interpolation"], "left")
+        self.assertEqual(len(m["subset_indices"]), self.N_DIMS)
+
+    def test_loudness_is_normalised_with_dataset_statistics(self):
+        # phrase 単位ではない。全 phrase を通した平均が 0・標準偏差が 1 に近づく。
+        self._build()
+        z = np.load(self.out / "svc_shard.npz")
+        vals = np.concatenate([z[k] for k in z.files if k.endswith("|loudness")])
+        self.assertAlmostEqual(float(vals.mean()), 0.0, places=4)
+        self.assertAlmostEqual(float(vals.std()), 1.0, places=4)
+
+    def test_is_deterministic(self):
+        a = self.out / "svc_shard.npz"
+        self._build(self._phrases())
+        first = a.read_bytes()
+        self._build(self._phrases())
+        self.assertEqual(first, a.read_bytes())
+
+    def test_rejects_a_phrase_whose_frame_arrays_disagree_with_the_mel(self):
+        phrases = self._phrases()
+        name = sorted(phrases)[0]
+        phrases[name]["uv"] = phrases[name]["uv"][:-1]
+        with self.assertRaises(ValueError):
+            self._build(phrases)
+
+    def test_rejects_content_with_an_unexpected_width(self):
+        phrases = self._phrases()
+        name = sorted(phrases)[0]
+        phrases[name]["content"] = phrases[name]["content"][:, : self.C_IN - 1]
+        with self.assertRaises(ValueError):
+            self._build(phrases)
+
+    def test_rejects_more_dims_than_the_content_has(self):
+        with self.assertRaises(ValueError):
+            self._build(n_dims=self.C_IN + 1)
+
+    def test_rejects_an_empty_phrase_set(self):
+        with self.assertRaises(ValueError):
+            self._build({})
+
+    def test_a_different_subset_seed_changes_the_written_content(self):
+        # ablation が 2 段目の再実行だけで回せること。
+        self._build(subset_seed=0)
+        a = np.load(self.out / "svc_shard.npz")
+        first = {k: a[k].copy() for k in a.files if k.endswith("|content")}
+        self._build(subset_seed=1)
+        b = np.load(self.out / "svc_shard.npz")
+        name = sorted(first)[0]
+        self.assertFalse(np.array_equal(first[name], b[name]))
 
 
 if __name__ == "__main__":
