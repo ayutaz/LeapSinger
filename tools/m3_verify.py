@@ -42,6 +42,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from leapsinger.config import MelSpec                                    # noqa: E402
+from tools.audio_metrics import band_profile                             # noqa: E402
 
 
 def cos_per_frame(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -126,8 +127,8 @@ def main() -> int:
         if len(wav) < n:
             continue
         seg = np.ascontiguousarray(wav[(len(wav) - n) // 2:(len(wav) - n) // 2 + n])
-        peak = float(np.abs(seg).max())
-        seg = (seg / peak * 0.95).astype(np.float32) if peak > 1e-6 else seg
+        # **音量を触らない。** 学習は生の音量のまま特徴を取るので、ここで peak 正規化すると
+        # loudness 条件が学習分布から 1.2 sigma ずれ、出力の高域が削れる（実測）。
 
         feats = extract_phrase(seg, mel.sr, content_encoder=encoder, f0_extract=f0x, mel=mel)
         if float(np.mean(feats["uv"] > 0.5)) < a.min_voiced:
@@ -153,9 +154,18 @@ def main() -> int:
         row["f0_converted"] = f0_stats(f0_hz, uv, np.asarray(f0_c, np.float32),
                                        np.asarray(uv_c, np.float32))
         row["uv_agree_converted"] = float(np.mean((uv > 0.5) == (np.asarray(uv_c) > 0.5)))
+        # **音の明るさ。** content cos も F0 も高域の欠落を検知しない（実測で centroid が
+        # 620 -> 368 Hz に落ちても cos は 0.8217 -> 0.8096 しか動かなかった）ので別軸で測る。
+        for tag, w in (("source", seg), ("resynth", resyn), ("converted", conv)):
+            bp = band_profile(np.asarray(w, dtype=np.float32), mel.sr)
+            if bp:
+                row[f"centroid_{tag}"] = bp["centroid_hz"]
+                row[f"bands_{tag}"] = bp["bands"]
         rows.append(row)
         if saved < a.save_wav:
-            sf.write(out_dir / f"m3_{saved}_source.wav", seg, mel.sr)
+            _p = float(np.abs(seg).max())        # 試聴用だけ揃える（特徴には使わない）
+            sf.write(out_dir / f"m3_{saved}_source.wav",
+                     (seg / _p * 0.95).astype(np.float32) if _p > 1e-6 else seg, mel.sr)
             sf.write(out_dir / f"m3_{saved}_converted.wav", conv, mel.sr)
             saved += 1
         print(f"  {path.name[:36]:<36} cos {row['content_cos_converted']:.3f} "
@@ -177,7 +187,10 @@ def main() -> int:
               "content_cos_unrelated_floor": agg("content_cos_unrelated"),
               "f0_corr": agg("f0_converted", "corr"),
               "f0_median_semitones": agg("f0_converted", "median_semitones"),
-              "uv_agree": agg("uv_agree_converted"), "clips": rows}
+              "uv_agree": agg("uv_agree_converted"),
+              "centroid_source": agg("centroid_source"),
+              "centroid_resynth_ceiling": agg("centroid_resynth"),
+              "centroid_converted": agg("centroid_converted"), "clips": rows}
     (out_dir / "m3_report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
 
@@ -191,6 +204,12 @@ def main() -> int:
         span = ceil["mean"] - floor["mean"]
         if span > 1e-6:
             print(f"  -> 下限からの回復率  : {(c['mean'] - floor['mean']) / span * 100:.1f}%")
+    cs, cc, cv = (report["centroid_source"], report["centroid_resynth_ceiling"],
+                  report["centroid_converted"])
+    if cs and cc and cv:
+        print(f"  音の明るさ（spectral centroid）: source {cs['mean']:.0f} Hz / "
+              f"上限 {cc['mean']:.0f} Hz / 変換 {cv['mean']:.0f} Hz")
+        print("  上限より大きく下なら高域が落ちている（content cos では検知できない）")
     print(f"  F0 相関 {report['f0_corr']['mean']:.4f} / "
           f"中央値 {report['f0_median_semitones']['median']:.3f} 半音 / "
           f"V/UV {report['uv_agree']['mean']:.3f}")

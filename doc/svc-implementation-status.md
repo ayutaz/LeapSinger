@@ -30,7 +30,9 @@
 | [`tools/m2_verify.py`](../tools/m2_verify.py) | 追加済み | M2 の検証（長さ・F0 追従・V/UV・再現性を測る） |
 | [`tools/nhv_indist.py`](../tools/nhv_indist.py) | 追加済み | M0 ゴール 4。コーパスが NHVSing にとって in-distribution かを再合成忠実度で測る |
 | [`tools/m3_corpus.py`](../tools/m3_corpus.py) | 追加済み | M3 の素材。GTSinger 20 歌手 + 日本語 3 DB を**話者ごとに 1 shard**で用意し、config を書き出す |
-| [`tools/m3_verify.py`](../tools/m3_verify.py) | 追加済み | M3 ゴール 3。未知 source の内容保持を content cos 類似度で測る（上限・下限つき） |
+| [`tools/m3_verify.py`](../tools/m3_verify.py) | 追加済み | M3 ゴール 3。未知 source の内容保持を content cos で測る（上限・下限つき）＋ 音の明るさ |
+| [`tools/svc_convert.py`](../tools/svc_convert.py) | 追加済み | 任意の WAV を学習済みモデルで変換する CLI。`--self-check` でボコーダー由来の劣化を分離 |
+| [`tools/audio_metrics.py`](../tools/audio_metrics.py) | 追加済み | 帯域エネルギー比と spectral centroid。**内容指標が検知しない高域の欠落**を測る |
 | [`configs/svc_base_multi.yaml`](../configs/svc_base_multi.yaml) | 追加済み | M3 の recipe。`spk_map` / `n_speakers` は素材から生成 |
 | [`test_svc_preprocess_integration.py`](../test_svc_preprocess_integration.py) | 追加済み | 実モデルを使う統合テスト（既定 skip） |
 | [`test_svc_preprocess.py`](../test_svc_preprocess.py) | 追加済み | 整列 / 部分集合 / loudness / shard / 抽出 / chunk / 命名 / 分量選択の契約テスト（103 件） |
@@ -156,7 +158,7 @@ Python 3.13 / torch 2.13 / librosa 1.0 へ更新した後、次を上記環境�
 
 ### 確認済み
 
-- 自動テスト **185 件**が成功（`test_svc_model` 19 / `test_svc_preprocess` 103 / `test_svc_dataset` 63）。重いモデルもネットワークも使いません。実モデルの統合テストは 4 件で、`LEAPSINGER_INTEGRATION=1` のときだけ走ります。
+- 自動テスト **191 件**が成功（`test_svc_model` 25 / `test_svc_preprocess` 103 / `test_svc_dataset` 63）。重いモデルもネットワークも使いません。実モデルの統合テストは 4 件で、`LEAPSINGER_INTEGRATION=1` のときだけ走ります。
 - コマンド guard の回帰テスト **45 件**（`tools/hooks/test_guard.py`）。止めすぎ検出のため、通ってほしいケースも同数以上入れています。
 - **実音声 5 コーパスへの検査・coverage・split**（M0。下記「M0 の実データ検証」）。
 - padding された frame が有効 frame に影響しないこと。
@@ -284,7 +286,8 @@ top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` / `
 
 ### 未検証
 
-- **音質**（内容保持・F0 追従・V/UV は測ったが、それは音質ではない）。
+- **音質**（内容保持・F0 追従・V/UV に加えて音の明るさも測るようになったが、それでも音質ではない）。
+- **高域の不足の解消**。変換出力は区間により上限比 −4%〜−26%（spectral centroid）。学習不足と mel の過平滑が候補。
 - **target timbre の再現・話者類似度**（M4 の担当）。
 - 256 次元部分集合の seed 比較の**反復**（1 度は実施済み。各 1 run では部分集合の差と run のばらつきを分離できない）。
 - target fine-tune（M4）。

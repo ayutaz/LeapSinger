@@ -74,6 +74,8 @@ uv run python tools/smoke/run_smoke.py --keep                # 失敗調査用�
 | SVC の学習・再開・推論が `model.content_dim=256 but dataset content_dim=768` で落ちる | `configs/svc_base.yaml` を 256 に変えたのに、smoke の合成データが 768 のままだった | `gen_synth_data.py` が **config から読む**ようにした |
 | device 自動判定が cuda を選ぶのに、そのあと全部落ちる | 判定が `torch.cuda.is_available()`（driver の有無しか見ない）だった | **実際に `torch.zeros(1, device='cuda')` を確保**して判定する |
 
+**内容指標は音の劣化を検知しません。** content cos / F0 相関 / V/UV が揃って良くても、高域が落ちて「こもった」音になっていることがあります（実測: centroid 620 → 368 Hz で content cos は 0.8217 → 0.8096 しか動かず）。`tools/audio_metrics.py` の spectral centroid と帯域比を必ず併せて見ること。**そして人に聴いてもらうこと** — この不具合は利用者の「音がこもっている」という一言から見つかりました。
+
 **教訓 3 つ。**
 
 1. 合成データを作る側に定数を置くと、config を変えたときに黙って乖離する。**smoke の入力は

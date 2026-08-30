@@ -291,3 +291,54 @@ class PerfSnapshotTests(unittest.TestCase):
         self.assertIn("step 100", line)
         self.assertIn("2.00 step/s", line)
         self.assertIn("1.00 GB", line)
+
+
+class BandProfileTests(unittest.TestCase):
+    """帯域エネルギー分布と spectral centroid。
+
+    M3 の検証は content cos / F0 相関 / V/UV だけで、**高域の欠落を検知できませんでした**。
+    推論側の loudness 条件がずれて centroid が 620 → 368 Hz へ落ちたとき、content cos は
+    0.8217 → 0.8096 としか動きませんでした（実測）。耳では明らかに「こもった」音です。
+    音の明るさを数値にして、この種の劣化を検証に載せます。
+    """
+
+    SR = 44100
+
+    def _tone(self, hz, seconds=1.0, harmonics=1):
+        t = np.arange(int(seconds * self.SR)) / self.SR
+        w = sum(np.sin(2 * np.pi * hz * k * t) / k for k in range(1, harmonics + 1))
+        return (w / np.abs(w).max() * 0.8).astype(np.float32)
+
+    def test_bands_sum_to_one(self):
+        from tools.audio_metrics import band_profile
+        p = band_profile(self._tone(220, harmonics=8), self.SR)
+        self.assertAlmostEqual(sum(p["bands"].values()), 1.0, places=3)
+
+    def test_a_low_tone_puts_its_energy_in_the_lowest_band(self):
+        from tools.audio_metrics import band_profile
+        p = band_profile(self._tone(200), self.SR)
+        self.assertGreater(p["bands"]["0-1k"], 0.95)
+        self.assertAlmostEqual(p["centroid_hz"], 200, delta=40)
+
+    def test_centroid_rises_with_the_tone(self):
+        from tools.audio_metrics import band_profile
+        low = band_profile(self._tone(200), self.SR)["centroid_hz"]
+        high = band_profile(self._tone(3000), self.SR)["centroid_hz"]
+        self.assertGreater(high, low * 5)
+
+    def test_removing_the_high_band_lowers_the_centroid(self):
+        # これが検知したい劣化そのもの。高調波を削ると centroid が下がること。
+        from tools.audio_metrics import band_profile
+        bright = band_profile(self._tone(220, harmonics=16), self.SR)
+        dull = band_profile(self._tone(220, harmonics=2), self.SR)
+        self.assertLess(dull["centroid_hz"], bright["centroid_hz"])
+        self.assertGreater(dull["bands"]["0-1k"], bright["bands"]["0-1k"])
+
+    def test_is_deterministic(self):
+        from tools.audio_metrics import band_profile
+        w = self._tone(220, harmonics=8)
+        self.assertEqual(band_profile(w, self.SR), band_profile(w, self.SR))
+
+    def test_returns_empty_for_a_signal_shorter_than_the_window(self):
+        from tools.audio_metrics import band_profile
+        self.assertEqual(band_profile(np.zeros(128, dtype=np.float32), self.SR), {})

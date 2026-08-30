@@ -75,7 +75,7 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
 
 `run_smoke.py` は 3rd-party API・学習・自動再開・推論・ボコーダー・前処理・ONNX 書き出しまでを 1 コマンドで通し、終了コードが失敗ステージ数になります。**依存やバージョンを変えた後、環境を移した後、学習を始める前に必ず走らせること。** 入力は合成波形なので品質の検証にはならず、配線が壊れていないことだけを示します。
 
-単体テストは **185 件**（`test_svc_model` 19 / `test_svc_preprocess` 103 / `test_svc_dataset` 63）で、重いモデルもネットワークも使いません。`unittest discover` は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。上の 3 本を明示的に並べるか、`run_smoke.py` の `unittest` ステージを使ってください。後者は top-level の `test_*.py` を自動収集し、件数を表示します。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗します。
+単体テストは **191 件**（`test_svc_model` 25 / `test_svc_preprocess` 103 / `test_svc_dataset` 63）で、重いモデルもネットワークも使いません。`unittest discover` は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。上の 3 本を明示的に並べるか、`run_smoke.py` の `unittest` ステージを使ってください。後者は top-level の `test_*.py` を自動収集し、件数を表示します。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗します。
 
 ONNX / OpenUTAU 書き出し（SVS のみ。実験的）:
 
@@ -178,6 +178,8 @@ hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の 
 - **ローカルの GPU は `nvidia-smi` が正常に見えても context 生成に失敗することがあります**（`CUDA error: CUDA-capable device(s) is/are busy or unavailable`）。`torch.cuda.is_available()` は driver の有無しか見ないので **True を返しても使えるとは限りません**。判定するなら `torch.zeros(1, device="cuda")` を実際に確保すること。この状態では推論スクリプトも落ちるので `--device cpu` で回します。
 - **CPU で回すときは `CUDA_VISIBLE_DEVICES=-1` を渡すこと。** torch 2.13 の optimizer は `step()` ごとに `torch.accelerator.current_stream()` を呼ぶため、CPU tensor しか無くても壊れた CUDA に触って落ちます。**`""` では効かず `-1` が要ります。** `run_smoke.py --device cpu` は自動で渡します。`train.py` の `pin_memory` も `_loader_kwargs()` で CUDA のときだけ有効です（回帰テストは `test_svc_model.LoaderKwargsTests`）。
 - **`tools/smoke/` の合成データは `configs/svc_base.yaml` の `model.content_dim` を読んで作ります。** ここを定数に戻すと、config を変えたときに SVC の学習・再開・推論ステージが黙って落ちます（実際に起きました）。
+- **推論時に入力の音量を触らないこと。** 学習（`preprocess.svc.run`）は生の音量のまま特徴を取ります。推論側で peak 正規化すると loudness 条件が学習分布からずれ、モデルが低域を持ち上げて高域を削ります（波音リツ DB は peak 0.107 なので実質 19 dB の増幅になり、spectral centroid が 620 → 368 Hz に落ちました）。`features_to_item()` は正規化の同一性を保証しますが、**その手前で波形を加工すると保証の外**です。
+- **内容指標だけで音の劣化を判断しないこと。** 上の不具合で centroid が 620 → 368 Hz に落ちても、content cos は 0.8217 → 0.8096 としか動きませんでした。`tools/audio_metrics.py` の帯域指標を併せて見ます。
 - **phrase 名の衝突は例外になりません。** `preprocess.svc.run` は曲ごとの通し番号で採番し、衝突を検出したら止めます。この採番を「ファイルごとに 0 から」に戻すと、同じ曲名の別ファイルが cache を**黙って上書き**し、shard の phrase 数が減るだけになります（GTSinger で 1,922 ファイルが 3 名に潰れました）。
 - **曲名を ASCII に削らないこと。** `_SAFE` は `[^\w-]` なので CJK を残します。ASCII だけにすると日本語題の曲がすべて同じ名前になり、曲単位 split が効きません（1,922 中 1,723 件が潰れました）。曲名は casefold して表記ゆれ（`Heartful_Song` と `Heartful_song`）も畳んでいます。
 - SVC では online `pitch_aug` を使えません（特徴量が事前計算済みのため）。`train.py` が明示的に SystemExit します。augmentation は特徴量抽出前に行います。
