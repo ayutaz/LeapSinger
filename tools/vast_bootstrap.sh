@@ -29,14 +29,24 @@ nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv || {
 df -h "$HOME" | tail -1
 echo "note: torch cu130 + nvidia wheel だけで 8GB 前後使う。ディスクは 40GB 以上を推奨"
 
-say "2. uv"
+say "2. 前提コマンド"
+# vastai/base-image には git/curl があるが、素の nvidia/cuda イメージには無い。
+missing=""
+for c in git curl; do command -v "$c" >/dev/null 2>&1 || missing="$missing $c"; done
+if [ -n "$missing" ]; then
+  echo "不足:$missing -> apt-get で入れる"
+  (apt-get update -qq && apt-get install -y -qq $missing) || {
+    echo "apt-get に失敗。$missing を手で入れること" >&2; exit 1; }
+fi
+
+say "3. uv"
 if ! command -v uv >/dev/null 2>&1; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
 export PATH="$HOME/.local/bin:$PATH"
 uv --version
 
-say "3. リポジトリ"
+say "4. リポジトリ"
 if [ -f "pyproject.toml" ] && [ -d "leapsinger" ]; then
   echo "カレントがリポジトリなのでそのまま使う: $(pwd)"
 else
@@ -49,12 +59,12 @@ else
 fi
 git log --oneline -1
 
-say "4. 依存 (uv.lock どおり。Python 3.13 は uv が用意する)"
+say "5. 依存 (uv.lock どおり。Python 3.13 は uv が用意する)"
 # shellcheck disable=SC2086
 uv sync $EXTRAS
 uv run python -VV
 
-say "5. GPU 疎通"
+say "6. GPU 疎通"
 uv run python - <<'PY'
 import torch
 print("torch          :", torch.__version__)
@@ -72,7 +82,7 @@ except ImportError:
     print("triton         : なし（torch.compile は使えない）")
 PY
 
-say "6. 倍音和の torch.compile 経路が効いているか"
+say "7. 倍音和の torch.compile 経路が効いているか"
 # Windows は Triton wheel が無くループ版に落ちる。Linux では compile が効くはずで、
 # ここが False のままなら励起が 3〜4 倍遅い状態のまま学習することになる。
 uv run python - <<'PY'
@@ -94,11 +104,11 @@ if not active:
     print("   (意図的に切るなら LEAPSINGER_EXC_COMPILE=0)")
 PY
 
-say "7. 単体テスト"
+say "8. 単体テスト"
 uv run python -m unittest test_svc_model
 
 if [ "$RMVPE" = "1" ]; then
-  say "8. RMVPE の重み (前処理用・約181MB)"
+  say "9. RMVPE の重み (前処理用・約181MB)"
   uv run python -c "from preprocess.algorithms.rmvpe import get_model_path; print(get_model_path(None))"
 fi
 

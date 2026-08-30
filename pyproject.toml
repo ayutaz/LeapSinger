@@ -32,6 +32,9 @@ export = [
 train = [
     "tensorboard",
 ]
+ops = [
+    "vastai>=1.5.6",
+]
 
 # Notes:
 # - F0 extraction uses RMVPE (a neural pitch estimator). See README for the weight download.
