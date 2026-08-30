@@ -19,7 +19,7 @@ import numpy as np
 from leapsinger.config import MelSpec
 from leapsinger.mel import wav_to_mel_nhv
 from preprocess.svc.align import align_left
-from preprocess.svc.chunk import chunk_spans
+from preprocess.svc.chunk import chunk_spans, voiced_ratio
 from preprocess.svc.extract import extract_phrase
 from preprocess.svc.shard import build_shard, features_to_item
 from preprocess.svc.loudness import dataset_stats, frame_log_rms, normalize_with_stats
@@ -618,6 +618,32 @@ class FeaturesToItemTests(unittest.TestCase):
         broken = {k: v for k, v in manifest.items() if k != "loudness_mean"}
         with self.assertRaises(ValueError):
             features_to_item(feats, broken)
+
+
+class VoicedRatioTests(unittest.TestCase):
+    """無声だけの chunk を弾くための判定。
+
+    実データで見つかった問題: 曲を先頭から固定長で切ると、イントロや間奏が丸ごと
+    無声の phrase になる。波音リツ 1 曲を 3 秒で切ったところ **89 phrase 中 35 件（39%）が
+    完全に無声**で、先頭 9 個（27 秒）は連続して無声だった。これを学習に入れると
+    「無音を出す」ことを学ぶ。
+    """
+
+    def test_returns_the_fraction_of_voiced_frames(self):
+        self.assertAlmostEqual(voiced_ratio(np.array([1, 1, 0, 0], dtype=np.float32)), 0.5)
+        self.assertAlmostEqual(voiced_ratio(np.array([1, 1, 1, 1], dtype=np.float32)), 1.0)
+        self.assertAlmostEqual(voiced_ratio(np.zeros(10, dtype=np.float32)), 0.0)
+
+    def test_treats_values_above_half_as_voiced(self):
+        # uv は 0/1 で入るが、float なので閾値を明示しておく。
+        self.assertAlmostEqual(voiced_ratio(np.array([0.6, 0.4], dtype=np.float32)), 0.5)
+
+    def test_returns_zero_for_an_empty_array(self):
+        self.assertEqual(voiced_ratio(np.zeros(0, dtype=np.float32)), 0.0)
+
+    def test_rejects_a_non_1d_array(self):
+        with self.assertRaises(ValueError):
+            voiced_ratio(np.zeros((2, 3), dtype=np.float32))
 
 
 if __name__ == "__main__":

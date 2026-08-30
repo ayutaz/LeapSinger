@@ -25,7 +25,7 @@ import numpy as np
 
 from leapsinger.config import MelSpec
 
-from .chunk import chunk_spans
+from .chunk import chunk_spans, voiced_ratio
 from .encoders import ContentVecEncoder, RmvpeF0
 from .extract import extract_phrase
 from .shard import build_shard
@@ -73,29 +73,38 @@ def stage_extract(args, mel: MelSpec) -> Path:
     f0x = RmvpeF0(f0_min=args.f0_min, f0_max=args.f0_max, device=args.device)
 
     sources: dict[str, str] = {}
-    n_phrases, t0 = 0, time.time()
+    n_phrases, n_skipped, t0 = 0, 0, time.time()
     for path in wavs:
         wav, sr = sf.read(path, dtype="float32", always_2d=False)
         if wav.ndim > 1:
             wav = wav.mean(axis=1)
         song = song_name(path, wav_root)
         spans = chunk_spans(len(wav), sr, chunk_sec=args.chunk_sec, min_sec=args.min_sec)
-        for i, (a, b) in enumerate(spans):
-            name = f"{song}_{i:04d}"
+        kept = 0
+        for a, b in spans:
             out = extract_phrase(np.ascontiguousarray(wav[a:b]), sr,
                                  content_encoder=encoder, f0_extract=f0x, mel=mel)
-            np.savez(cache / f"{name}.npz", **out)
+            # 無声だけの chunk を捨てる。曲を先頭から固定長で切るとイントロや間奏が
+            # 丸ごと無声の phrase になり、学習に入れると「無音を出す」ことを学ぶ。
+            if voiced_ratio(out["uv"]) < args.min_voiced:
+                n_skipped += 1
+                continue
+            np.savez(cache / f"{song}_{kept:04d}.npz", **out)
+            kept += 1
             n_phrases += 1
         sources[str(path.relative_to(wav_root))] = sha256_of(path)
-        print(f"  {path.name[:44]:<44} {len(spans):>3} phrases", flush=True)
+        print(f"  {path.name[:44]:<44} {kept:>3} phrases "
+              f"({len(spans) - kept} 無声で除外)", flush=True)
 
     (cache / "_sources.json").write_text(
         json.dumps({"wav_dir": str(wav_root), "sha256": sources,
                     "chunk_sec": args.chunk_sec, "min_sec": args.min_sec,
+                    "min_voiced": args.min_voiced, "skipped_unvoiced": n_skipped,
                     "mel": mel.to_dict(),
                     **encoder.manifest(), **f0x.manifest()},
                    ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"[extract] {len(wavs)} files -> {n_phrases} phrases  {time.time() - t0:.0f}s  -> {cache}")
+    print(f"[extract] {len(wavs)} files -> {n_phrases} phrases "
+          f"({n_skipped} 無声で除外)  {time.time() - t0:.0f}s  -> {cache}")
     return cache
 
 
@@ -133,6 +142,8 @@ def main() -> None:
     ap.add_argument("--subset-seed", type=int, default=0)
     ap.add_argument("--chunk-sec", type=float, default=10.0)
     ap.add_argument("--min-sec", type=float, default=2.0)
+    ap.add_argument("--min-voiced", type=float, default=0.3,
+                    help="有声フレームがこの割合未満の chunk は捨てる（無音のイントロ対策）")
     ap.add_argument("--content-model", default="lengyue233/content-vec-best")
     ap.add_argument("--layer", type=int, default=12)
     ap.add_argument("--f0-min", type=float, default=65.0)

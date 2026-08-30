@@ -39,3 +39,21 @@ def chunk_spans(n_samples: int, sr: int, *, chunk_sec: float,
             spans.append((start, end))
         start = end
     return spans
+
+
+def voiced_ratio(uv) -> float:
+    """有声フレームの割合を返す。無声だけの chunk を弾くために使います。
+
+    **実データで見つかった問題:** 曲を先頭から固定長で切ると、イントロや間奏が丸ごと無声の
+    phrase になります。波音リツ 1 曲を 3 秒で切ったところ **89 phrase 中 35 件（39%）が完全に
+    無声**で、先頭 9 個（27 秒）は連続して無声でした。これを学習に入れると「無音を出す」ことを
+    学びます。M2 の overfit がまさにそれで、生成された WAV が無音になりました。
+    """
+    import numpy as np
+
+    uv = np.asarray(uv)
+    if uv.ndim != 1:
+        raise ValueError(f"uv must be 1-D; got shape {uv.shape}")
+    if uv.size == 0:
+        return 0.0
+    return float((uv > 0.5).mean())
