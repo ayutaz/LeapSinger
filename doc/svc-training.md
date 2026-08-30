@@ -27,6 +27,8 @@ Phase 5  streaming student distillation
 
 **推奨:** 20〜50 人、合計 100〜300 時間を最初の本学習案とし、より小さい corpus で先に recipe を確定します。
 
+**確認済み（2026-08-30 実施）:** より小さい corpus として **23 話者 / 約 18 時間**（GTSinger 全 9 言語 20 歌手 + 日本語 3 DB、1 歌手あたり 0.75 時間）で recipe を確定しました。`balance_speakers: true` の speaker-balanced sampling で 30,000 step 完走し、未知 source（VocalSet）でも内容が崩壊しないことを確認しています。詳細は [実行計画](svc-plan.md) M3 の進捗節。
+
 ```text
 Singer A WAV -> content/F0/loudness + speaker A -> mel A
 Singer B WAV -> content/F0/loudness + speaker B -> mel B

@@ -19,7 +19,7 @@
 
 ## 1. 現在地
 
-**確認済み:** **M0 / M1 / M2 は完了**、M3 以降は未着手です。
+**確認済み:** **M0 / M1 / M2 / M3 は完了**、M4 以降は未着手です。
 [svc.md](svc.md) の完了レベルは **3（実データ）に到達**しています（実音声の shard で学習して WAV を出した）。
 レベル 4 は Seed-VC との blind comparison を要求するので未到達です。
 
@@ -32,9 +32,10 @@
 | 済 | 学習環境の決定（vast.ai の Linux GPU）と、その操作系（`tools/vast.py` / `tools/vast_bootstrap.sh`） |
 | 済 | content encoder・F0 extractor・loudness 正規化・補間方法・部分集合 seed の決定（[content encoder の選定](svc-content-encoder.md)） |
 | 済 | **M0 完了**（入手可能な素材について）。5 コーパスの取得・検査・coverage・split と台帳（[データセット台帳](svc-dataset-ledger.md)） |
-| 済 | **M1 完了**。WAV から shard までコマンド 1 本、再実行で bit 一致。単体 84 テスト |
+| 済 | **M1 完了**。WAV から shard までコマンド 1 本、再実行で bit 一致 |
 | 済 | **M2 完了**。実音声 2 phrase を overfit して WAV を生成。F0 相関 0.9991、決定的モードで bit 再現 |
-| 未 | **実データでの本学習をしていない。** overfit は一般化でも音質でもありません |
+| 済 | **M3 完了**。23 話者 18 時間の base を 30,000 step 学習。未知 source で内容が崩壊しないことを実測 |
+| 未 | **音質と target らしさを評価していない。** 内容保持と F0 追従は測ったが、それは音質ではありません |
 
 **決定:** 実データで汎化する学習を行うまで、品質・速度に関する対外的な主張を行いません。
 
@@ -45,7 +46,7 @@
 | **M0** ✅ | データ確定 | 学習してよい素材を法的・品質的に固定する | dataset ledger と split list |
 | **M1** ✅ | 特徴抽出前処理 | WAV から `svc_shard.npz` を再現可能に作る | 先に書いた失敗するテスト、再実行で一致する shard と manifest |
 | **M2** ✅ | 実音声 smoke | 配線が実音声で成立することを示す | overfit した phrase の WAV |
-| **M3** | multi-singer base | 話者に依存しない変換器の土台を作る | 未知 source singer で崩れない base ckpt |
+| **M3** ✅ | multi-singer base | 話者に依存しない変換器の土台を作る | 未知 source singer で崩れない base ckpt |
 | **M4** | target fine-tune | target singer の音色を再現する | offline teacher ckpt と指標一式 |
 | **M5** | offline 品質ゲート | 外部 baseline と同条件で比較する | Seed-VC との blind test 結果 |
 | **M6** | streaming student | 実機で実時間動作させる | 実測 end-to-end latency と連続運転記録 |
@@ -349,9 +350,57 @@ uv run python tools/m2_verify.py --ckpt log/svc_seed1/ckpt_003000.pt --data data
 `--write-config` が**実際に作った shard から**埋めた config を run ディレクトリへ書き出します。
 **その生成物が実験記録**です。
 
+### 進捗（2026-08-30）: 完了
+
+**確認済み:** vast.ai の RTX 3090（実効 $0.21/hr）で **23 話者・25 shard・約 18 時間**の
+multi-singer base を 30,000 step 学習し、4 つのゴールをすべて満たしました。
+成果物は `log/m3_base/`（config・perf.json・events・checkpoint）と `out/m3_*`（検証）です。
+
+| ゴール | 結果 |
+|---|---|
+| 1. balanced sampling で完走 | `balance_speakers: true` で `[dataset] balanced sampling by 'speaker'`。train 8,353 phrase / hold-out 888。**30,000 step 完走**。train/flow 0.04717 → **0.00551**（最小 0.00447）、recon 0.08960 → 0.02891。eval/loss 0.02932 → **0.02311（単調減少）**、eval/varL 1.200 → 1.064（1.0 = GT と同じ鮮鋭さ） |
+| 2. base を immutable に保存 | `ckpt_030000.pt` **134.7 MB** を手元へ回収。ローカルで読み込み確認（`HarmonicSVCModel` 11.61M params / `n_speakers` 23 / `spk_bank` (23, 32)）。**M4 は別 `run_name` を使う** |
+| 3. **未知 source で内容が崩壊しない** | 下表。**未知 source が学習済み歌手と同等** |
+| 4. 実測して見積もりを更新 | 8.14 step/s・130 ex/s・151,354 frames/s・**peak VRAM 1.95 GB**・checkpoint 134.7 MB。[データセットと計算資源](svc-data-compute.md) 6 節・8 節を実測値へ更新済み |
+
+#### ゴール 3 の測り方と結果
+
+「歌詞内容が崩壊しない」を聴かずに測るため、**source と変換後の ContentVec の
+フレームごと cos 類似度**を使いました（[`tools/m3_verify.py`](../tools/m3_verify.py)）。
+単独の数値には意味が無いので、**上限**（source の GT mel を NHVSing に通しただけの再合成＝
+vocoder のみの劣化）と**下限**（無関係な別クリップとの類似度）で挟みます。
+
+| source | n | content cos | 上限 | 下限 | **下限からの回復率** | F0 相関 | 半音 | V/UV |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| **未知（VocalSet。base に不使用）** | 8 | 0.8217 | 0.9434 | 0.0923 | **85.7%** | 0.9914 | 0.018 | 0.9884 |
+| 対照: 学習済み歌手（JA-Soprano-1） | 8 | 0.8124 | 0.9437 | 0.1035 | 84.4% | 0.9984 | 0.016 | 0.9840 |
+
+**未知 source のほうがわずかに良い**という結果で、少なくとも「未知だから崩れる」現象は
+出ていません。F0 追従（相関 0.99 以上・中央値 0.02 半音）と V/UV 一致（0.98 以上）も保たれています。
+
+**この結果が意味しないこと:** 音質、target らしさ（話者類似度）、Seed-VC との優劣。
+content cos は「内容が保たれているか」だけを見る指標で、**M4 / M5 の評価の代わりにはなりません**。
+n=8・6 秒クリップという規模でもあります。
+
+#### この過程で見つかった欠陥・修正 4 件
+
+1. **phrase 名が衝突して cache を黙って上書きしていた。** GTSinger の深い構造で
+   `song_name()` が親ディレクトリ（`Control_Group`）を返し、連番がファイルごとに 0 へ戻るため、
+   1 歌手 1,922 ファイルが **3 つの名前に潰れて**いました。例外にもなりません。
+2. **日本語の曲名がすべて消えていた。** 名前を ASCII に削っていたため、日本語題の曲が
+   1,922 中 1,723 件で同じ名前になり、曲単位 split が効きませんでした。
+3. **`eval_items` は話者ごとの本数。** 3 話者なら 9 サンプルですが 23 話者では 69 になり、
+   1 回の eval が mel 図と音声を 138 本書き出して **10 分以上**（単一コア 100%）かかりました。
+   多話者では `eval_items: 1` にします。
+4. **GTSinger を丸ごと落とすと HTTP 429 で 3 時間半。** 使う wav だけ選んで 9 分にしました。
+
 ### 規模の目安
 
 **見積もり:** 20〜50 人 / 合計 100〜300 時間が現実的な最初の本学習案です。ただしこれは実測前の計画値であり、より小さい corpus で先に recipe を確定させます。
+
+**確認済み（実測後の補正）:** 今回は **23 話者 / 約 18 時間**（1 歌手あたり 0.75 時間）で
+recipe が成立しました。**eval loss は 30,000 step でもまだ下がり続けており、
+更新回数にも素材量にも伸びしろがあります。** 総時間より話者数を優先する構成は機能しています。
 
 ### 注意
 

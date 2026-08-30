@@ -62,7 +62,7 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
 
 `run_smoke.py` は 3rd-party API・学習・自動再開・推論・ボコーダー・前処理・ONNX 書き出しまでを 1 コマンドで通し、終了コードが失敗ステージ数になります。**依存やバージョンを変えた後、環境を移した後、学習を始める前に必ず走らせること。** 入力は合成波形なので品質の検証にはならず、配線が壊れていないことだけを示します。
 
-単体テストは **152 件**（`test_svc_model` 10 / `test_svc_preprocess` 84 / `test_svc_dataset` 58）で、重いモデルもネットワークも使いません。`unittest discover` は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。上の 3 本を明示的に並べるか、`run_smoke.py` の `unittest` ステージを使ってください。後者は top-level の `test_*.py` を自動収集し、件数を表示します。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗します。
+単体テストは **185 件**（`test_svc_model` 19 / `test_svc_preprocess` 103 / `test_svc_dataset` 63）で、重いモデルもネットワークも使いません。`unittest discover` は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。上の 3 本を明示的に並べるか、`run_smoke.py` の `unittest` ステージを使ってください。後者は top-level の `test_*.py` を自動収集し、件数を表示します。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗します。
 
 ONNX / OpenUTAU 書き出し（SVS のみ。実験的）:
 
@@ -98,7 +98,7 @@ ONNX / OpenUTAU 書き出し（SVS のみ。実験的）:
 
 yaml は `mel` / `model` / `excitation` / `train` / `gan` / `data` の 6 セクションです。`mel` は `MelSpec`（`leapsinger/config.py`）として前処理・loader・励起 hop で共有され、常に一致している必要があります（44.1 kHz / hop 256 / n_fft 2048 / 128 mel / 40–16000 Hz、NHVSing V3 互換）。
 
-`configs/.gitignore` は top-level の `configs/*.yaml` を無視し、`3speaker_gan2d.yaml` / `3singer_ritsu3style_uv_gan2d.yaml` / `svc_base.yaml` の 3 つだけを公開対象にしています。新しい config を追加してもコミット対象にならない点に注意。
+`configs/.gitignore` は top-level の `configs/*.yaml` を無視し、`3speaker_gan2d.yaml` / `3singer_ritsu3style_uv_gan2d.yaml` / `svc_base.yaml` / `svc_base_multi.yaml` の 4 つだけを公開対象にしています。新しい config を追加してもコミット対象にならない点に注意。
 
 ### SVC のデータ契約（厳格）
 
@@ -168,6 +168,7 @@ hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の 
 - SVC では online `pitch_aug` を使えません（特徴量が事前計算済みのため）。`train.py` が明示的に SystemExit します。augmentation は特徴量抽出前に行います。
 - **学習はすべて vast.ai の Linux インスタンスで行います。手元の Windows で `train.py` を起動すると device によらず hook が止めます**（`tools/hooks/guard_commands.py` の `check_local_training`）。`--device cpu` に逃げるのも不可です。CPU は実測で 1 phrase 1200 step に約 60 分かかり、実験記録の環境も本番と食い違います。ローカル GPU は他の作業と取り合って `unspecified launch failure` を起こしました（実際に発生）。 手元の Windows 機は開発・推論・検証用で、セットアップは `tools/vast_bootstrap.sh`。API token 等は `.env`（gitignore 済み）に置きます。`uv.lock` は Linux も解決済みで、Linux では `triton` が入るため下の `torch.compile` の制約は当てはまりません。
 - **Windows では `torch.compile` が使えません。** `harmonic_excitation.py` の倍音和は compile 前提の融合版（Linux + Triton で 3〜4 倍）ですが、Windows には Triton wheel がなく、さらに日本語ロケール（cp932）では inductor の template 読み込み自体が `UnicodeDecodeError` になります。`triton-windows` を入れても C コンパイラが必要です。コードは **compile 生成時と初回呼び出しの両方**でループ版へフォールバックします（数値差は加算順のみ）。最初から切るなら `LEAPSINGER_EXC_COMPILE=0`。
+- **`eval_items` は話者ごとの本数です。** 3 話者なら 9 サンプルですが 23 話者では 69 になり、1 回の eval が mel 図と音声を 138 本書き出して 10 分以上（単一コア 100%）かかります。多話者では `eval_items: 1` にして `eval_interval` も大きくすること（実測で踏みました）。
 - 1 曲しかない DB は eval split が空になります（`n_hold = min(eval_songs, 曲数 - 1)`）。`train.py` の `log_eval` は空なら評価を飛ばします。数フレーズの overfit 検証ではこの経路を通ります。
 - RMVPE はマルチプロセスで動かさないこと（README の注意）。RMVPE の重み `preprocess/algorithms/rmvpe.pt` は初回実行時に HuggingFace から自動ダウンロードされます（約 181 MB、`.gitignore` 対象）。
 - `dataset.py` の phrase 名は `{song}_{NNNN}` 形式で、`_song_of()` が曲単位の train/eval 分割に使います。この命名を崩すと leakage 防止が効かなくなります。

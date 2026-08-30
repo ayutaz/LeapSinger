@@ -33,8 +33,8 @@
 | [`tools/m3_verify.py`](../tools/m3_verify.py) | 追加済み | M3 ゴール 3。未知 source の内容保持を content cos 類似度で測る（上限・下限つき） |
 | [`configs/svc_base_multi.yaml`](../configs/svc_base_multi.yaml) | 追加済み | M3 の recipe。`spk_map` / `n_speakers` は素材から生成 |
 | [`test_svc_preprocess_integration.py`](../test_svc_preprocess_integration.py) | 追加済み | 実モデルを使う統合テスト（既定 skip） |
-| [`test_svc_preprocess.py`](../test_svc_preprocess.py) | 追加済み | 整列 / 部分集合 / loudness / shard / 抽出 / chunk / 命名の契約テスト（84 件） |
-| [`test_svc_dataset.py`](../test_svc_dataset.py) | 追加済み | audit / coverage / split / report の契約テスト（58 件） |
+| [`test_svc_preprocess.py`](../test_svc_preprocess.py) | 追加済み | 整列 / 部分集合 / loudness / shard / 抽出 / chunk / 命名 / 分量選択の契約テスト（103 件） |
+| [`test_svc_dataset.py`](../test_svc_dataset.py) | 追加済み | audit / coverage / split / report / GTSinger の wav 選択の契約テスト（63 件） |
 | [`tools/smoke/`](../tools/smoke/) | 追加済み | 全経路の疎通を 1 コマンドで回す（12 ステージ） |
 | [`tools/hooks/`](../tools/hooks/) | 追加済み | 常に誤りのコマンドを実行前に止める guard と回帰テスト |
 | [`tools/vast.py`](../tools/vast.py) / [`tools/vast_bootstrap.sh`](../tools/vast_bootstrap.sh) | 追加済み | vast.ai インスタンスの操作と初期化 |
@@ -156,7 +156,7 @@ Python 3.13 / torch 2.13 / librosa 1.0 へ更新した後、次を上記環境�
 
 ### 確認済み
 
-- 自動テスト **152 件**が成功（`test_svc_model` 10 / `test_svc_preprocess` 84 / `test_svc_dataset` 58）。重いモデルもネットワークも使いません。実モデルの統合テストは 4 件で、`LEAPSINGER_INTEGRATION=1` のときだけ走ります。
+- 自動テスト **185 件**が成功（`test_svc_model` 19 / `test_svc_preprocess` 103 / `test_svc_dataset` 63）。重いモデルもネットワークも使いません。実モデルの統合テストは 4 件で、`LEAPSINGER_INTEGRATION=1` のときだけ走ります。
 - コマンド guard の回帰テスト **37 件**（`tools/hooks/test_guard.py`）。
 - **実音声 5 コーパスへの検査・coverage・split**（M0。下記「M0 の実データ検証」）。
 - padding された frame が有効 frame に影響しないこと。
@@ -252,6 +252,28 @@ Windows で使えなかった `torch.compile` 経路が効きます。
 **loudness の窓幅・floor・正規化単位**）。RMVPE 重みの sha256 と入手元、loudness の定義を
 記録するようにし、どちらも先に失敗するテストを書いてから実装しています。
 
+### M3（multi-singer base pretraining）の実証（2026-08-30）
+
+**確認済み:** vast.ai の RTX 3090（offer $0.136/hr、disk 150 GB 込みで実効 $0.21/hr）で、
+**23 話者・25 shard・約 18 時間**の base を 30,000 step 学習しました。詳細は
+[実行計画](svc-plan.md) M3 の進捗節です。
+
+| 項目 | 実測 |
+|---|---|
+| 素材 | GTSinger 全 9 言語 20 歌手（1 歌手 0.75 h）+ 波音リツ 3 音源 + 夏目悠李 + 御丹宮くるみ |
+| dataset | train 8,353 phrase / hold-out 888 phrase。`balance_speakers: true` |
+| 学習 | **8.14 step/s**、130 examples/s、151,354 frames/s、30,000 step が約 60 分 |
+| **peak VRAM** | **1.95 GB**（見積もりの 24 GB は大きく外していた） |
+| checkpoint | 134.7 MB（`HarmonicSVCModel` 11.61M params / `spk_bank` (23, 32)） |
+| 損失 | train/flow 0.04717 → **0.00551**、eval/loss 0.02932 → **0.02311（単調減少）**、eval/varL 1.200 → 1.064 |
+| 未知 source の内容保持 | content cos **0.8217**（上限 0.9434 / 下限 0.0923、**回復率 85.7%**）。学習済み歌手 84.4% と同等 |
+| 抽出 | 25 shard を 52.3 分（GPU 使用率 6% で **GPU 律速ではない**）。shard は約 1.6 GB per audio-hour |
+
+**この過程で見つかった欠陥 4 件**（[実行計画](svc-plan.md) M3 の進捗節に詳細）:
+phrase 名の衝突による cache の黙った上書き、日本語曲名の消失、`eval_items` が話者ごとの
+本数であること、GTSinger を丸ごと落とすと HTTP 429 で 3 時間半かかること。
+**いずれも合成データでは出ません。**
+
 ### 制限付き
 
 top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` / `test_svc_dataset.py` の
@@ -262,10 +284,10 @@ top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` / `
 
 ### 未検証
 
-- **実歌唱データで汎化する学習**（確認済みなのは 2 phrase の overfit まで。held-out での収束は未確認）。
-- **target timbre の再現**（WAV は出ているが、音色が target に似ているかは未評価）。
-- 256 次元部分集合の **seed 0 と seed 1 の比較**（[実行計画](svc-plan.md) M1 決定 2。shard は両方ある）。
-- multi-singer base pretraining。
+- **音質**（内容保持・F0 追従・V/UV は測ったが、それは音質ではない）。
+- **target timbre の再現・話者類似度**（M4 の担当）。
+- 256 次元部分集合の seed 比較の**反復**（1 度は実施済み。各 1 run では部分集合の差と run のばらつきを分離できない）。
+- target fine-tune（M4）。
 - SVS checkpoint の安全な部分 warm-start。
 - Seed-VC との客観・主観比較。
 - NHVSing target fine-tune。
@@ -278,7 +300,7 @@ top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` / `
 1. ~~ContentVec/HuBERT + RMVPE + loudness の再現可能な extractor~~ — **完了**（M1）。
 2. ~~実 audio での preprocessing smoke~~ — **完了**（M1、波音リツ実音声）。
 3. ~~1〜数 phrase overfit と WAV 出力~~ — **完了**（M2）。
-4. multi-singer base と target fine-tune（M3 / M4）。
+4. ~~multi-singer base~~ — **完了**（M3）。target fine-tune（M4）。
 5. SVS -> SVC shared-weight warm-start loader と load-report tests（条件付きトラック A。M3 のコストが問題になった場合のみ）。
 6. Seed-VC comparison suite と blind review artifact（M5）。
 7. offline gate 後に streaming student（M6）。

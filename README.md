@@ -185,8 +185,9 @@ OpenUTAU向けには、ボイスバンク一式（ONNX ＋ 設定 ＋ 辞書 ＋
 実装済みです。content encoder は **ContentVec**（768次元 layer12、学習には固定ランダムに
 選んだ256次元）、F0 は **RMVPE**、SSL から mel grid への整列は **left（直前保持）**に決めています。
 ContentVec を実行して特徴量 shard を作る抽出器も実装済みで、WAV からコマンド 1 本で作れます
-（再実行で bit 一致）。実音声で overfit して WAV を出すところまで確認しました。
-**リアルタイム student と、実用品質を狙う本学習は未実施です。**
+（再実行で bit 一致）。実音声で overfit して WAV を出し、さらに **23 話者・約 18 時間の multi-singer base 事前学習**まで
+通しました（未知の source singer を入れても内容が崩壊しないことを実測）。
+**target singer への fine-tune、音質・話者類似度の評価、リアルタイム student は未実施です。**
 要件、設計、データ/GPU、学習、評価、先行研究・ライセンス、実装状況、出典を分割した
 調査ドキュメントは [doc/svc.md](doc/svc.md) を索引として参照してください。
 
