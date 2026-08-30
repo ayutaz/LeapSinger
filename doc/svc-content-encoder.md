@@ -11,8 +11,9 @@ model API で実際に確認した値を記載する。
 ## 1. 結論
 
 **決定:** content encoder は **ContentVec**（`lengyue233/content-vec-best`、MIT、768 次元、layer 12）
-を採用する。ただし shard には **768 次元の生の特徴と、そこから固定のランダム 256 次元を選んだもの**の
-両方を出せるようにし、**学習の既定は 256 次元**とする。
+を凍結して使う。抽出は 2 段に分け、**1 段目の cache に生の 768 次元**を、**`svc_shard.npz` には
+そこから固定のランダムに選んだ 256 次元**を書く（7 節）。mel grid への整列は **left（直前保持）**、
+F0 は **RMVPE 固定**、loudness 特徴量は **dataset 統計で正規化**する。
 
 **根拠:** 下の 3 節（Interspeech 2025 の同一 test set 比較）で、ContentVec を 256 次元へ削減したものが
 生の 768 次元を主観類似度で 0.53 ポイント上回っている。とくに **out-of-domain（学習言語以外）での
@@ -98,25 +99,38 @@ RIFT-SVC が V2 → V3 で Whisper encoder を落としている点は、**構�
 | WavLM | ライセンスが HF のカードで宣言されておらず未確認。話者情報を保持する設計で層選択がシビア |
 | 素の HuBERT | timbre 漏れが最大（SMOS 2.494）。**ただし ablation のベースラインとしては有用** |
 
-## 6. まだ決まっていないこと
+## 6. 補間方法と部分集合の決定
 
-**要ユーザー判断 / 未決:**
+**決定（実測にもとづく）:** 補間は **left（直前保持・左寄せ繰り返し）**。
 
-- **フレームレートの合わせ方。** SSL は 16 kHz・stride 320 = 50 Hz、mel grid は 44,100/256 =
-  172.265625 Hz。比は 3.4453125 で**整数にならない**。補間方法（linear / nearest / 繰り返し）は
-  音質に効くうえ、[データ契約](svc-implementation-status.md)が `T` の完全一致を要求するため、
-  manifest に記録すべき決定事項になる。**推奨:** まず linear。
-- **256 次元の選び方。** ランダム部分集合を 1 つ固定するのか、複数 seed を比較するのか。
-  **推奨:** seed を 2 つ作って M2 の overfit で差を見る（抽出は 768 を 1 回で済むので追加コストは小さい）。
-- **層の確認。** layer 12 は so-vits-svc の `vec768l12` に合わせた既定値だが、
-  `content-vec-best` の final projection 出力との対応は実装時に実際の shape で確認する。
+SSL は 16 kHz・stride 320 = 50 Hz、mel grid は 44,100/256 = 172.265625 Hz、比 3.4453125 は整数に
+なりません。3 方式を同条件で測った結果:
+
+| 方式 | left 基準の先読み | ブレンドされるフレーム |
+|---|---:|---:|
+| **left** | **0 ms** | **0%** |
+| nearest | 20 ms | 0% |
+| linear | 20 ms | 99.4% |
+
+left は他方式に対して劣る点がありません。nearest と linear は 1 SSL フレーム（20 ms）先を読むため、
+[実行計画](svc-plan.md) M6 の streaming で無償の lookahead を積み、train と inference の因果性も
+ずれます。linear はさらに 99.4% のフレームを混ぜ、ContentVec の表現空間に実在しないベクトルを作ります。
+so-vits-svc の `repeat_expand_2d` の既定 `mode='left'` とも一致します。
+
+**決定:** 256 次元の部分集合は **seed 0 を既定**とし、M2 の overfit で seed 1 と比較します。
+Interspeech 2025 の 2 つの部分集合は SSIM 0.813 / 0.822 と小さいながら差がありました。
+
+**未決:** layer 12 は so-vits-svc の `vec768l12` に合わせた既定値だが、
+`content-vec-best` の final projection 出力との対応は実装時に実際の shape で確認する。
 
 ## 7. 実装への含意
 
 - 抽出器は **encoder 非依存**に作る。モデル名・層・stride・正規化を引数にし、manifest へ記録する。
   比較（[実行計画](svc-plan.md) M3 / M5 の ablation）が後から回せることを優先する。
-- shard には 768 次元を保存し、**学習時に index で 256 次元へ切り出す**。抽出は 1 回で済み、
-  部分集合を変えた実験に再抽出が要らない。
+- **抽出を 2 段に分ける。** 1 段目（重い）が WAV から 50 Hz の生 ContentVec 768 と F0 を cache に出し、
+  2 段目（軽い）が mel grid への整列・正規化・256 次元の切り出しを行って `svc_shard.npz` を書く。
+  補間方法と 256 次元 seed の ablation が **2 段目の再実行だけ**で済み、ContentVec と RMVPE を
+  回し直さずに比較できる。shard に書くのは 256 次元（loader に切り出させると契約の性質を崩すため）。
 - ただし `configs/svc_base.yaml` の `content_dim` は既定 256 とする。
   **見積もり:** 768 → 256 で content の VRAM とディスクが約 1/3 になり、
   vast.ai の時間課金とストレージ課金の両方に効く。

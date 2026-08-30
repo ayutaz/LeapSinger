@@ -108,7 +108,8 @@ dataset ledger（権利・lineage・checksum）、split list、reject list、cov
 | 項目 | 決定 |
 |---|---|
 | content encoder | ContentVec（`lengyue233/content-vec-best`、MIT、768 次元、layer 12）を凍結して使う |
-| 学習時の次元 | 768 から固定ランダムに選んだ **256 次元**。shard には 768 を保存し、index で切り出す |
+| 学習時の次元 | 768 から固定ランダムに選んだ **256 次元**（seed 0 を既定）。生の 768 は cache に、shard には 256 を書く |
+| 補間 | SSL 50 Hz -> mel grid へ **left（直前保持・左寄せ繰り返し）**。先読み 0 ms、元の SSL ベクトルを保持 |
 | F0 extractor | **RMVPE に固定** |
 | loudness 特徴量 | **dataset 統計で正規化**（phrase 単位ではない） |
 | 音声側の正規化 | RIFT-SVC に倣い **-18 LUFS** を検討。loudness 特徴量の正規化とは別レイヤ |
@@ -123,10 +124,42 @@ dataset ledger（権利・lineage・checksum）、split list、reject list、cov
 
 **M0 との関係を分けます。** 抽出器の**実装とテストは M0 の完了を待たずに始められます**（テストは合成音声と小さな fixture で書けるため）。一方 M1 の**完了**（target singer 1 人分の実 shard）は M0 を要します。この分離により、権利確認と並行してコードを進められます。
 
-### 残る未決
+### 抽出は 2 段に分ける
 
-- **SSL 特徴を mel grid へ合わせる補間方法。** SSL は 16 kHz・stride 320 = 50 Hz、mel grid は 44,100/256 = 172.265625 Hz で、比 3.4453125 は整数になりません。**推奨:** まず linear。決めたら manifest に記録します。
-- **256 次元部分集合の seed。** **推奨:** seed を 2 つ作り M2 の overfit で差を見ます（抽出は 768 を 1 回で済むので追加コストは小さい）。
+**決定:** 抽出器は次の 2 段構成にします。入口のコマンドは 1 本のままで、2 段目だけの再実行もできるようにします。
+
+| 段 | 入力 -> 出力 | コスト | 内容 |
+|---|---|---|---|
+| 1. `extract` | WAV -> 生特徴 cache | 重い（GPU・モデル） | ContentVec 768 を 50 Hz のまま、RMVPE の F0、RMS、mel |
+| 2. `build-shard` | cache -> `svc_shard.npz` | 軽い（CPU のみ） | mel grid への整列、dataset 統計での正規化、256 次元の切り出し |
+
+**理由:** 下の 2 つの決定はどちらも「後で変えたくなる」種類のものです。2 段に分けておけば、**補間方法と 256 次元 seed の比較が 2 段目の再実行だけで済み、ContentVec と RMVPE を回し直さずに ablation できます。** vast.ai の課金に直接効きます。
+
+shard に書くのは 256 次元です（768 ではありません）。loader に切り出しをさせると「暗黙に直さない」という契約の性質を崩すためです。
+
+### 決定 1: 補間は left（直前保持）
+
+**確認済み（実測）:** SSL は 16 kHz・stride 320 = 50 Hz、mel grid は 44,100/256 = 172.265625 Hz。比 3.4453125 は整数になりません。3 方式を同条件で測った結果:
+
+| 方式 | left 基準の先読み | ブレンドされるフレーム |
+|---|---:|---:|
+| **left（直前保持）** | **0 ms** | **0%** |
+| nearest | 20 ms | 0% |
+| linear | 20 ms | 99.4% |
+
+**決定:** **left** を採用します。理由は 3 つで、いずれも他方式より劣る点がありません。
+
+1. **先読み 0 ms。** nearest と linear は 1 SSL フレーム（20 ms）先を読みます。[M6](#m6-streaming-student) は lookahead を削る作業なので、前処理の時点で無償の 20 ms を積むのは筋が悪く、しかも train と inference の因果性がずれます。
+2. **元の SSL ベクトルをそのまま保持。** linear は 99.4% のフレームを混ぜます。ContentVec の表現空間が線形とは限らず、音素境界をまたぐ混合は実在しないベクトルを作ります。
+3. **so-vits-svc の既定（`repeat_expand_2d` の `mode='left'`）と一致。** 最も広く使われている挙動です。
+
+以前この文書では「推奨: まず linear」と書いていましたが、実測の結果 **left に訂正**しました。
+
+### 決定 2: 256 次元は seed 0 を既定、M2 で seed 1 と比較
+
+**決定:** 既定は seed 0。M2 の overfit で seed 1 との差を見ます。Interspeech 2025 の 2 つの部分集合は SSIM 0.813 / 0.822 と小さいながら差があったため、1 回だけ確かめます。2 段構成なので追加コストは 2 段目の再実行だけです。
+
+**未実装だが選択肢として残す:** cache に 768 が残るので、ランダム部分集合ではなく PCA や学習可能な射影も後から試せます。
 
 **注意:** SVC では online `pitch_aug` が使えません（`train.py` が SystemExit します）。augmentation を行うならこの段階、特徴量抽出の前に行います。RMVPE はマルチプロセスで動かさないこと。
 
