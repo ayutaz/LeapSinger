@@ -26,6 +26,9 @@
 | 済 | `HarmonicSVCModel`、`ContentAdapter`、`SVCFeatureDataset`、train/infer 配線、`configs/svc_base.yaml` |
 | 済 | 合成テンソルによる targeted test（shape、padding、alignment 検証、checkpoint 往復） |
 | 済 | 再現可能な開発環境（Python 3.13 固定、`uv.lock`、CUDA 版 torch の実機疎通確認） |
+| 済 | 全経路の疎通確認を 1 コマンド化（`tools/smoke/run_smoke.py` 11 ステージ）、誤コマンドを実行前に止める hook、作業手順の skill 化 |
+| 済 | 学習環境の決定（vast.ai の Linux GPU）と、その操作系（`tools/vast.py` / `tools/vast_bootstrap.sh`） |
+| 済 | content encoder・F0 extractor・loudness 正規化の決定（[content encoder の選定](svc-content-encoder.md)） |
 | 未 | 実音声を 1 度も通していない。WAV も 1 本も出していない |
 
 **決定:** 実音声を通していない段階では、品質・速度に関する対外的な主張を行いません。
@@ -35,7 +38,7 @@
 | ID | 名前 | 一言でいう目的 | 完了の判定材料 |
 |---|---|---|---|
 | **M0** | データ確定 | 学習してよい素材を法的・品質的に固定する | dataset ledger と split list |
-| **M1** | 特徴抽出前処理 | WAV から `svc_shard.npz` を再現可能に作る | 再実行で一致する shard と manifest |
+| **M1** | 特徴抽出前処理 | WAV から `svc_shard.npz` を再現可能に作る | 先に書いた失敗するテスト、再実行で一致する shard と manifest |
 | **M2** | 実音声 smoke | 配線が実音声で成立することを示す | overfit した phrase の WAV |
 | **M3** | multi-singer base | 話者に依存しない変換器の土台を作る | 未知 source singer で崩れない base ckpt |
 | **M4** | target fine-tune | target singer の音色を再現する | offline teacher ckpt と指標一式 |
@@ -91,11 +94,24 @@ dataset ledger（権利・lineage・checksum）、split list、reject list、cov
 
 ### ゴール
 
+**実装は TDD で行います**（[進行ルール](#9-進行ルール)）。以下の 1〜4 は、実装より先に書いて失敗させたテストで担保されている状態を指します。
+
 1. `preprocess` 配下のコマンド 1 本で、WAV ディレクトリから `data/<db>/{metadata.json, svc_shard.npz}` が生成できる。
 2. 生成した shard を `SVCFeatureDataset` が**例外なく**読める。`content` `f0_interp` `uv` `loudness` `mel` の `T` が完全一致している（loader は暗黙補正しないので、ここが通ることが整合性の証明になります）。
 3. phrase 名が `{song}_{NNNN}` 形式である。`_song_of()` による曲単位 train/eval 分割が効かなくなるため、この命名を崩さない。
-4. 同じ WAV・同じ設定で 2 回実行し、出力が一致する。
-5. manifest に次を記録している: content encoder の **model revision と層番号**、sample rate、hop、stride、正規化方法、loudness の定義（窓幅・floor・正規化単位）、F0 extractor の version、入力 WAV の checksum。
+4. 同じ WAV・同じ設定で 2 回実行し、出力が **bit 一致**する。
+5. manifest に次を記録している: content encoder の **model revision と層番号**、sample rate、hop、**SSL の stride と mel grid への補間方法**、正規化方法、**256 次元部分集合の index と生成 seed**、loudness の定義（窓幅・floor・正規化単位）、F0 extractor の version、入力 WAV の checksum。
+6. 重いモデル（ContentVec / RMVPE）を落とさずに走る単体テストと、実モデルを使う統合テストが分かれている。前者が `test_*.py` の既定、後者は明示的に指定したときだけ動く。
+
+### 決定（[content encoder の選定](svc-content-encoder.md)）
+
+| 項目 | 決定 |
+|---|---|
+| content encoder | ContentVec（`lengyue233/content-vec-best`、MIT、768 次元、layer 12）を凍結して使う |
+| 学習時の次元 | 768 から固定ランダムに選んだ **256 次元**。shard には 768 を保存し、index で切り出す |
+| F0 extractor | **RMVPE に固定** |
+| loudness 特徴量 | **dataset 統計で正規化**（phrase 単位ではない） |
+| 音声側の正規化 | RIFT-SVC に倣い **-18 LUFS** を検討。loudness 特徴量の正規化とは別レイヤ |
 
 ### 成果物
 
@@ -103,13 +119,14 @@ dataset ledger（権利・lineage・checksum）、split list、reject list、cov
 
 ### 前提・依存
 
-M0 完了。実行環境（Python 3.13 + CUDA 版 torch）は整備済みなので、この段階の障害は環境ではなくコードとデータのみです。
+実行環境（Python 3.13 + CUDA 版 torch、`uv.lock`）と疎通確認は整備済みです。
 
-### 要ユーザー判断 / 未決
+**M0 との関係を分けます。** 抽出器の**実装とテストは M0 の完了を待たずに始められます**（テストは合成音声と小さな fixture で書けるため）。一方 M1 の**完了**（target singer 1 人分の実 shard）は M0 を要します。この分離により、権利確認と並行してコードを進められます。
 
-- content encoder を ContentVec と HuBERT のどちらにし、どの層を使うか。
-- F0 extractor を RMVPE に固定するか、SwiftF0 等も比較するか。**推奨:** まず RMVPE を基準にし、target data の高音・裏声・breathy voice で error analysis を行う。
-- loudness を phrase 単位で正規化するか dataset 統計で正規化するか。
+### 残る未決
+
+- **SSL 特徴を mel grid へ合わせる補間方法。** SSL は 16 kHz・stride 320 = 50 Hz、mel grid は 44,100/256 = 172.265625 Hz で、比 3.4453125 は整数になりません。**推奨:** まず linear。決めたら manifest に記録します。
+- **256 次元部分集合の seed。** **推奨:** seed を 2 つ作り M2 の overfit で差を見ます（抽出は 768 を 1 回で済むので追加コストは小さい）。
 
 **注意:** SVC では online `pitch_aug` が使えません（`train.py` が SystemExit します）。augmentation を行うならこの段階、特徴量抽出の前に行います。RMVPE はマルチプロセスで動かさないこと。
 
@@ -336,6 +353,7 @@ M5 通過。**決定:** M5 を通過していない teacher を基準に student
 
 - **飛ばさない。** M1 を経ずに M3 以降は実行できません（shard がないため物理的に不可能）。M5 を経ずに M6 を主目的にしません。
 - **上書きしない。** base checkpoint と fine-tune 成果物は別 `run_name` / 別ディレクトリに保存します。同じ `--run_name` で再実行すると `log/<run_name>/ckpt_*.pt` の最新から自動再開するため、別実験では必ず run 名を変えます。
+- **テストを先に書く。** このリポジトリの実装はすべて TDD で行います。失敗するテストを書き、失敗を確認し、通す最小限のコードを書く。先に書いたテストが無い実装コードは破棄してやり直します（`superpowers:test-driven-development` と `leapsinger-tdd`）。
 - **1 度に 1 要素。** ablation では同一 split・seed・更新 budget を使い、複数要素を同時に変えません。
 - **環境を固定する。** Python 3.13 と `uv.lock` を実験の一部として扱い、torch / CUDA / 依存を更新した run はその差分を実験記録に残します。環境差による品質差はモデル差と見分けがつきません。
 - **失敗を消さない。** failure clip は削除せず、category と suspected component を付けて残します。
