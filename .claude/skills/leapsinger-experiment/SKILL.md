@@ -147,6 +147,11 @@ TensorBoard の events、**話者 25 分の `manifest.json` / `metadata.json`**�
 **そして人に聴いてもらうこと。** この 2 件は利用者の「音がこもっている」という一言から
 見つかりました。指標が揃って良いことを「問題なし」の根拠にしないでください。
 
+**`num_steps` を振ってみること。** rectified flow は 1 step と多 step がほぼ一致するのが理想で、
+**差が出るなら 1 step 写像が未収束**という直接の証拠になります。M3 の base では 16 step にすると
+spectral centroid の不足が平均 **−17% → −5%** に減りました。品質を報告するときは
+**step 数を必ず併記**すること（多 step は行き過ぎることもある。実測で上限比 +10%）。
+
 ## 7. 主張の範囲を守る
 
 結果を書くときは [`doc/svc-prior-art-license.md`](../../../doc/svc-prior-art-license.md) 6 節の規則に従う。

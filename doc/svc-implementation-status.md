@@ -287,7 +287,7 @@ top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` / `
 ### 未検証
 
 - **音質**（内容保持・F0 追従・V/UV に加えて音の明るさも測るようになったが、それでも音質ではない）。
-- **高域の不足の解消**。変換出力は区間により上限比 −4%〜−26%（spectral centroid）。学習不足と mel の過平滑が候補。
+- **高域の不足の解消**。**1 step では上限比 平均 −17%、16 step では −5%**（spectral centroid）。差が出ること自体が 1 step 写像の未収束を示す。8–16 kHz だけは推論設定では戻らない。
 - **target timbre の再現・話者類似度**（M4 の担当）。
 - 256 次元部分集合の seed 比較の**反復**（1 度は実施済み。各 1 run では部分集合の差と run のばらつきを分離できない）。
 - target fine-tune（M4）。
