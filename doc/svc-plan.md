@@ -318,8 +318,8 @@ base 学習を始める前に、同じ split・同じ seed・同じ更新 budget
 
 ```bash
 # 2 段目だけを 2 通り回す（ContentVec / RMVPE の再実行は不要）
-uv run python -m preprocess.svc.run --from-cache data/ritsu_svc/_cache --out data/seed0 --subset-seed 0
-uv run python -m preprocess.svc.run --from-cache data/ritsu_svc/_cache --out data/seed1 --subset-seed 1
+uv run python -m preprocess.svc.run --from-cache data/ritsu/_cache --out data/seed0 --subset-seed 0
+uv run python -m preprocess.svc.run --from-cache data/ritsu/_cache --out data/seed1 --subset-seed 1
 # run 名を分けて 2 本。base checkpoint は別 run_name（上書きしない）
 uv run python -m train --config configs/svc_base.yaml --data_dirs data/seed0 \
   --run_name svc_seed0 --out_root log --device cuda --max_updates 3000
@@ -331,6 +331,23 @@ uv run python tools/m2_verify.py --ckpt log/svc_seed1/ckpt_003000.pt --data data
 
 差が無ければ seed 0 で確定し、以後の全実験の基盤にします。差が出たら、その差を
 [content encoder の選定](svc-content-encoder.md) へ記録してから base 学習へ進みます。
+
+### 素材の構成
+
+**決定:** [台帳](svc-dataset-ledger.md) 6 節の割り当てに従い、**GTSinger 全 9 言語 20 歌手 +
+日本語 3 DB** を使います。用意は [`tools/m3_corpus.py`](../tools/m3_corpus.py) が行います。
+
+| 決定 | 内容 |
+|---|---|
+| 話者ごとに 1 shard ディレクトリ | `svc_dataset.py` は speaker id を**ディレクトリ名**から引く（`spk_map`）。話者を分けるにはディレクトリを分けるしかない |
+| 波音リツ 3 音源は同じ speaker id | 同じ歌手の別の声質。SVS 側の config と同じ扱い |
+| **歌手ごとに分量を揃える**（`--max-hours`） | base 事前学習で効くのは総時間より**話者の多様性**。GTSinger 80.59 h を全部抽出すると 12 時間以上かかる |
+| GTSinger は使う wav だけ落とす | リポジトリは 149,037 ファイルあり、丸ごと落とすと HTTP 429 で律速されて 3 時間半かかる（実測） |
+| 曲名は `--song-parts` で指定 | `<言語>/<歌手>/<技法>/<曲>/<Group>/NNNN.wav` の `<曲>`。技法や Group をまたいで同じ曲を同じ song 名にしないと leakage する |
+
+`spk_map` と `n_speakers` は素材で決まるので `configs/svc_base_multi.yaml` には書かず、
+`--write-config` が**実際に作った shard から**埋めた config を run ディレクトリへ書き出します。
+**その生成物が実験記録**です。
 
 ### 規模の目安
 

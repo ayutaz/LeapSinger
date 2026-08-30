@@ -94,6 +94,18 @@ uv run python -m preprocess.svc.run --wav-dir download/ritsu --out data/x --devi
 `compiled path active: True` / `harmonic_wave 1.6 ms/call` になり、Windows で使えなかった
 `torch.compile` 経路が効きます。
 
+**実測（RTX 3090 / offer $0.136 + disk 150GB で実効 $0.21 per hour、M3）:**
+
+| 工程 | 実測 |
+|---|---|
+| GTSinger の取得（使う wav だけ 7,977 本 / 11 GB） | 9 分 |
+| 特徴抽出 25 shard（23 話者・約 18 時間） | 52 分。**GPU 使用率 6%＝GPU 律速ではない** |
+| base 学習 | 8.14 step/s、30,000 step が約 60 分 |
+| peak VRAM | **1.95 GB**（24 GB 級は要らなかった） |
+
+**ディスク課金は無視できません。** 150 GB を付けたら $0.136/hr の offer が実効 $0.21/hr に
+なりました（+54%）。**必要量を見積もってから付けること。** 上の構成なら実測 51 GB です。
+
 ## 4. 接続して確認する
 
 ```bash

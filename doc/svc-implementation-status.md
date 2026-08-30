@@ -29,6 +29,9 @@
 | [`preprocess/svc/run.py`](../preprocess/svc/run.py) | 実装済み | M1 の CLI。`--from-cache` で 2 段目だけ再実行 |
 | [`tools/m2_verify.py`](../tools/m2_verify.py) | 追加済み | M2 の検証（長さ・F0 追従・V/UV・再現性を測る） |
 | [`tools/nhv_indist.py`](../tools/nhv_indist.py) | 追加済み | M0 ゴール 4。コーパスが NHVSing にとって in-distribution かを再合成忠実度で測る |
+| [`tools/m3_corpus.py`](../tools/m3_corpus.py) | 追加済み | M3 の素材。GTSinger 20 歌手 + 日本語 3 DB を**話者ごとに 1 shard**で用意し、config を書き出す |
+| [`tools/m3_verify.py`](../tools/m3_verify.py) | 追加済み | M3 ゴール 3。未知 source の内容保持を content cos 類似度で測る（上限・下限つき） |
+| [`configs/svc_base_multi.yaml`](../configs/svc_base_multi.yaml) | 追加済み | M3 の recipe。`spk_map` / `n_speakers` は素材から生成 |
 | [`test_svc_preprocess_integration.py`](../test_svc_preprocess_integration.py) | 追加済み | 実モデルを使う統合テスト（既定 skip） |
 | [`test_svc_preprocess.py`](../test_svc_preprocess.py) | 追加済み | 整列 / 部分集合 / loudness / shard / 抽出 / chunk / 命名の契約テスト（84 件） |
 | [`test_svc_dataset.py`](../test_svc_dataset.py) | 追加済み | audit / coverage / split / report の契約テスト（58 件） |

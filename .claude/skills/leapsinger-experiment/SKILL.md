@@ -48,6 +48,7 @@ ls log/                      # 既存の run を必ず確認してから決め�
 | `--init_from` で SVS → SVC | 同一構造前提。arch をまたぐ部分ロードは未実装 |
 | CUDA 推論の再現性 | **既定では bit 再現しない。** RNG ではなく conv/matmul の非決定性（実測 ln-mel で max 7.95e-02）。`torch.use_deterministic_algorithms(True)` + `CUBLAS_WORKSPACE_CONFIG=:4096:8` で bit 一致する（CPU は既定で一致） |
 | 無声だけの phrase | 曲を固定長で切るとイントロが丸ごと無声になる（実測 89 中 35 件）。**学習に入れると「無音を出す」ことを学ぶ。** `preprocess.svc.run --min-voiced` で除外する |
+| `eval_items`（多話者） | **話者ごとの本数**。3 話者なら 9 サンプルだが、**23 話者だと 69 サンプル**になり、1 回の eval が mel 図と音声を 138 本書き出して **10 分以上**かかる（実測。単一コア 100%）。多話者では `eval_items: 1` と `eval_interval` を大きくする |
 
 ## 3. 走らせる — **手元では回さない（CPU も含めて）**
 
@@ -75,9 +76,16 @@ uv run python -m train --config <config> \
 2. `[dataset]` / `[svc-dataset]` の phrase 数が期待どおりか。0 なら split か `min_sec` を疑う。
 3. `train/flow` と `train/recon` が下がっているか。NaN や発散なら即止める。
 4. GAN を使うなら `gan_start_step` を超えてから `train/d_loss` `train/adv` が出ているか。
-5. **実測値を取る**: examples/sec、frames/sec、peak VRAM、checkpoint サイズ、eval 所要。
+5. **実測値を取る**: `train.py` が step 100 / 1,000 / 10,000 で `[perf]` 行を出し、
+   `log/<run>/perf.json` と TensorBoard の `perf/*` に残す（steps/sec、examples/sec、
+   frames/sec、peak VRAM）。checkpoint サイズと eval 所要は別途控える。
    これは [`doc/svc-data-compute.md`](../../../doc/svc-data-compute.md) の見積もりを実測へ置き換える材料であり、
    vast.ai なら**そのまま料金の見積もり**になる。
+
+   **実測の例（2026-08-30、RTX 3090 / 23 話者の multi-singer base）:** 8.14 step/s、
+   130 ex/s、151k frames/s、**peak VRAM 1.95 GB**。見積もり表の「multi-singer base は 24 GB」は
+   大きく外していた。`max_batch_size: 16` が先に効いて 1 batch が約 22,000 フレームで
+   頭打ちになるため。**VRAM ではなく batch 本数が制約になることがある。**
 
 ## 5. 成果物を守る
 

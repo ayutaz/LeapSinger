@@ -115,7 +115,19 @@ data/<dataset>/
 | 32〜48 GB | 長い crop、大きい batch、teacher/student 同時処理に余裕 |
 | 80 GB | PoC には不要。大規模化・高速化用 |
 
-この表は現行 SVC 実装の peak VRAM 実測ではありません。AMP、gradient checkpointing、feature width、GAN、sequence length、PyTorch/CUDA version で変動します。
+この表は計画値です。AMP、gradient checkpointing、feature width、GAN、sequence length、PyTorch/CUDA version で変動します。
+
+**確認済み（2026-08-30 実測、M3 の multi-singer base）: 実際の peak VRAM は 1.95 GB でした。**
+上表の「multi-singer base は 24 GB」は**大きく外していました**。23 話者・8,353 phrase・
+`max_batch_frames: 30000` / `max_batch_size: 16` / GAN 無効 / fp32 の条件です。
+
+**理由:** phrase が 8 秒（約 1,378 フレーム）なので、30,000 フレームなら 21 phrase 入る計算ですが
+`max_batch_size: 16` が先に効いて 1 batch は約 22,000 フレームで頭打ちになります。**VRAM ではなく
+batch 本数が制約**でした。24 GB のカードを取っても 2 GB しか使っていません。
+
+**含意:** multi-singer base だけなら **8〜12 GB のカードで足ります**（より安い offer が選べます）。
+24 GB 級が要るのは、`max_batch_size` を上げる・GAN を足す・crop を伸ばすときです。
+まだ measure していない条件へこの数字を外挿しないでください。
 
 **確認済み:** 現在の開発機は RTX 4070 Ti SUPER 16 GB（driver 596.21 / torch 2.13.0+cu130、詳細は [実装状況](svc-implementation-status.md) の「実行環境」表）です。上表の基準では target fine-tune は手元で回せる一方、multi-singer base pretraining の推奨基準 24 GB には届きません。**決定:** 学習は vast.ai の Linux GPU インスタンスで行い、手元の Windows 機は開発・推論・検証に使います。したがって上表の 24 GB / 48 GB 級はインスタンスの選択で満たせます。**見積もり:** インスタンスは時間課金なので、必要 VRAM だけでなく「1 実験あたり何時間か」で選ぶことになります。最初の 100 / 1,000 update の実測（examples/sec、frames/sec、peak VRAM）が、そのまま料金の見積もりになります。
 
@@ -151,9 +163,26 @@ gan.enabled: false
 （2 phrase・各 3 秒・content_dim 256・hidden 256）が **13〜15 step/s** でした。M1 の抽出は
 1 曲（3 秒 chunk × 50 phrase）で 42 秒です。M2 一式（素材取得・抽出・3,000 step 学習・検証）で
 **27 分・実費およそ $0.04** でした。**これは overfit の規模なので、本学習の見積もりには使えません。**
-M3 で base を回すときに、同じ手順で examples/sec と peak VRAM を測り直します。
 
-計画値として固定せず、最初の 100 / 1,000 update で examples/sec、frames/sec、peak VRAM、checkpoint size、validation time を計測して再見積もりします。
+### M3（multi-singer base）の実測（2026-08-30、RTX 3090 24 GB / $0.21 per hour）
+
+**確認済み:** 23 話者・8,353 train phrase（hold-out 888）・約 18 時間の音声での実測です。
+料金は disk 150 GB ぶんを含みます（offer 自体は $0.136/hr）。
+
+| 工程 | 実測 |
+|---|---|
+| GTSinger の取得 | 使う wav だけ選んで **7,977 本 / 11 GB を 9 分**。リポジトリ全体（149,037 ファイル）を落とすと HTTP 429 で律速され **3 時間半** |
+| 特徴抽出（2 段） | **25 shard を 52.3 分**。1 歌手 0.75 h ぶんが約 140 秒（**約 19 倍速**）。GPU 使用率は約 6% で、**GPU 律速ではない** |
+| shard の容量 | 29 GB / 約 18 時間 → **約 1.6 GB per audio-hour**（256 次元 content + mel + cache の 768 次元） |
+| base 学習 | **8.14 step/s**、130 examples/s、151,354 frames/s（step 1,000 時点） |
+| peak VRAM | **1.95 GB**（6 節。24 GB という見積もりは大きく外していた） |
+| 30,000 step の所要 | 約 **61 分** |
+
+**外挿の目安（見積もり）:** この条件なら 100 時間の corpus でも抽出は約 5 時間、
+学習は step 数で決まります。**ただし `max_batch_size: 16` が効いているので、
+batch を増やすと step/s も VRAM も変わります。**
+
+計画値として固定せず、最初の 100 / 1,000 update で examples/sec、frames/sec、peak VRAM、checkpoint size、validation time を計測して再見積もりします。`train.py` がこれを `log/<run>/perf.json` と TensorBoard へ自動で残します。
 
 ## 9. 保存すべきデータ台帳
 
