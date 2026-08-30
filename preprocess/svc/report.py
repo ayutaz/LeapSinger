@@ -18,6 +18,7 @@ from typing import Callable, Mapping
 import numpy as np
 
 from .audit import AuditThresholds, audit_clip
+from .coverage import label_seconds
 from .split import split_by_group
 
 LoadAudio = Callable[[str], "tuple[np.ndarray, int]"]
@@ -25,10 +26,13 @@ LoadAudio = Callable[[str], "tuple[np.ndarray, int]"]
 
 def build_report(names: Mapping[str, str], load_audio: LoadAudio, *,
                  expected_sr: int, seed: int, eval_groups: int, test_groups: int,
-                 thresholds: AuditThresholds | None = None) -> dict:
+                 thresholds: AuditThresholds | None = None,
+                 labels: Mapping[str, str] | None = None) -> dict:
     """全クリップを検査し、通ったものだけで split を作る。
 
     `names` は `{phrase 名: group 名}`。group は曲か収録セッションです。
+    `labels` を渡すと、受理したクリップだけでラベルごとの滞在秒数も出します
+    （技法・性別など。M0 ゴール 3 の「発声スタイルの coverage」）。
 
     弾いた素材は split に入れません。残すと学習が起動時に落ちます。全クリップが弾かれた場合は
     例外にします。空の split を黙って返すと、検査が厳しすぎるのか素材が壊れているのかが
@@ -37,6 +41,7 @@ def build_report(names: Mapping[str, str], load_audio: LoadAudio, *,
     th = thresholds or AuditThresholds()
     rejects: dict[str, list[str]] = {}
     accepted: dict[str, str] = {}
+    accepted_dur: dict[str, float] = {}
     accepted_sec = rejected_sec = 0.0
 
     for name in sorted(names):
@@ -48,6 +53,7 @@ def build_report(names: Mapping[str, str], load_audio: LoadAudio, *,
             rejected_sec += duration
         else:
             accepted[name] = names[name]
+            accepted_dur[name] = duration
             accepted_sec += duration
 
     if not accepted:
@@ -57,8 +63,16 @@ def build_report(names: Mapping[str, str], load_audio: LoadAudio, *,
 
     split = split_by_group(accepted, seed=seed, eval_groups=eval_groups,
                            test_groups=test_groups)
+
+    coverage: dict[str, dict[str, float]] = {}
+    if labels is not None:
+        # 弾いた素材は数えない。混ぜると、実際に学習する分布と食い違う。
+        pairs = [(labels[n], accepted_dur[n]) for n in sorted(accepted) if n in labels]
+        coverage["labels"] = label_seconds([l for l, _ in pairs], [d for _, d in pairs])
+
     return {
         "rejects": rejects,
+        "coverage": coverage,
         "split": split,
         "totals": {
             "accepted": len(accepted), "rejected": len(rejects),

@@ -117,6 +117,14 @@ coverage」が**自動で集計できます**。現在 `preprocess/svc/coverage.
 
 ## 4. 実データで流した結果（Annotated-VocalSet, 2026-08-30）
 
+### 取得物の lineage（M0 ゴール 1 の checksum 項目）
+
+| 取得物 | 入手元 | 取得日 | サイズ | SHA-256 |
+|---|---|---|---:|---|
+| `Annotated VocalSet.zip` | [Zenodo 7061507](https://zenodo.org/records/7061507) | 2026-08-30 | 411,531,853 B | `52b50150c732e0835f8c7f3f1d6e631a679ea88843c3667ed7f8806abea53b69` |
+
+ライセンスはいずれも **CC BY 4.0**。帰属表示のみで商用利用も可です。
+
 **確認済み:** [Annotated-VocalSet](https://zenodo.org/records/7061507)（CC BY 4.0、392 MB）を
 取得し、M0 の集計と split を実際に通しました。**このアーカイブに音声は入っておらず、
 区間アノテーションの CSV のみ**です。したがって音声を要する検査（ゴール 2）は未実施で、

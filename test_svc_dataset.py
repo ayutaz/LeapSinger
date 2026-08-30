@@ -430,6 +430,29 @@ class BuildReportTests(unittest.TestCase):
         self.assertAlmostEqual(r["totals"]["accepted_sec"], 3 * 2.0, places=3)
         self.assertAlmostEqual(r["totals"]["rejected_sec"], 1 * 2.0, places=3)
 
+    def test_includes_label_coverage_when_labels_are_given(self):
+        # 技法や性別のラベルがあるなら、reject / split と同じ一度の走査で集計まで出す。
+        names = self._names(n_groups=4, per_group=2)
+        labels = {n: ("belt" if n.startswith("song00") else "breathy") for n in names}
+        r = build_report(names, self._loader(set()), expected_sr=self.SR,
+                         seed=0, eval_groups=1, test_groups=1, labels=labels)
+        cov = r["coverage"]["labels"]
+        self.assertAlmostEqual(cov["belt"], 2 * 2.0, places=3)
+        self.assertAlmostEqual(cov["breathy"], 6 * 2.0, places=3)
+
+    def test_label_coverage_counts_only_accepted_clips(self):
+        # 弾いた素材を coverage に混ぜると、実際に学習する分布と食い違う。
+        names = self._names(n_groups=4, per_group=2)
+        labels = {n: "belt" for n in names}
+        r = build_report(names, self._loader({"song00_0000"}), expected_sr=self.SR,
+                         seed=0, eval_groups=1, test_groups=1, labels=labels)
+        self.assertAlmostEqual(r["coverage"]["labels"]["belt"], 7 * 2.0, places=3)
+
+    def test_coverage_is_absent_without_labels(self):
+        r = build_report(self._names(), self._loader(set()), expected_sr=self.SR,
+                         seed=0, eval_groups=1, test_groups=1)
+        self.assertNotIn("labels", r.get("coverage", {}))
+
     def test_is_deterministic_for_the_same_seed(self):
         names = self._names()
         a = build_report(names, self._loader(set()), expected_sr=self.SR,
