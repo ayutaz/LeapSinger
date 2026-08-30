@@ -16,7 +16,8 @@ from typing import Mapping
 
 
 def split_by_group(names: Mapping[str, str], *, seed: int,
-                   eval_groups: int, test_groups: int) -> dict[str, list[str]]:
+                   eval_groups: int, test_groups: int,
+                   strata: Mapping[str, str] | None = None) -> dict[str, list[str]]:
     """`{phrase 名: group 名}` を train / eval / test に分ける。
 
     同じ group が 2 つの split に跨がることはありません。各 split 内の名前は昇順です
@@ -34,10 +35,31 @@ def split_by_group(names: Mapping[str, str], *, seed: int,
             f"train に group が残りません: {len(groups)} groups では "
             f"eval {eval_groups} + test {test_groups} を取れません")
 
-    shuffled = list(groups)
-    random.Random(seed).shuffle(shuffled)
-    held_test = set(shuffled[:test_groups])
-    held_eval = set(shuffled[test_groups:test_groups + eval_groups])
+    rng = random.Random(seed)
+    if strata is None:
+        order = list(groups)
+        rng.shuffle(order)
+    else:
+        missing = [g for g in groups if g not in strata]
+        if missing:
+            raise ValueError(f"strata に無い group があります: {missing[:5]}")
+        # 層ごとにシャッフルしてから層をラウンドロビンで取り出す。先頭から順に
+        # test / eval へ配るので、held-out には必ず各層が混ざる。
+        buckets: dict[str, list[str]] = {}
+        for group in groups:
+            buckets.setdefault(strata[group], []).append(group)
+        for bucket in buckets.values():
+            rng.shuffle(bucket)
+        keys = sorted(buckets)
+        rng.shuffle(keys)
+        order = []
+        while any(buckets[k] for k in keys):
+            for k in keys:
+                if buckets[k]:
+                    order.append(buckets[k].pop())
+
+    held_test = set(order[:test_groups])
+    held_eval = set(order[test_groups:test_groups + eval_groups])
 
     out: dict[str, list[str]] = {"train": [], "eval": [], "test": []}
     for name in sorted(names):

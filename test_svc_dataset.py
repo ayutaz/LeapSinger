@@ -12,7 +12,7 @@ import numpy as np
 
 from preprocess.svc.audit import AuditThresholds, audit_clip, effective_bandwidth_hz
 from preprocess.svc.report import build_report
-from preprocess.svc.coverage import pitch_band_seconds, voiced_range
+from preprocess.svc.coverage import label_seconds, pitch_band_seconds, voiced_range
 from preprocess.svc.split import split_by_group
 
 
@@ -271,6 +271,100 @@ class CoverageTests(unittest.TestCase):
                          frame_rate=self.FR)
         self.assertEqual(r["voiced_sec"], 0.0)
         self.assertTrue(all(v == 0.0 or np.isnan(v) is False for v in r.values()))
+
+
+class StratifiedSplitTests(unittest.TestCase):
+    """held-out に偏りが出ないよう層で均す。
+
+    実データ（VocalSet 20 名）で確認した問題: 歌手単位でランダムに held-out を選ぶと、
+    seed 0 では eval も test も全員男性、seed 3 では全員女性になった。SVC は異性間の変換が
+    難しい方なので、held-out が片方の性別だけだと評価がその難所を素通りする。
+    """
+
+    def _names(self, n_each=8):
+        names, strata = {}, {}
+        for i in range(n_each):
+            for sex in ("f", "m"):
+                g = f"{sex}{i}"
+                strata[g] = sex
+                for k in range(2):
+                    names[f"{g}_{k:04d}"] = g
+        return names, strata
+
+    def test_each_split_gets_a_mix_of_strata(self):
+        names, strata = self._names()
+        for seed in range(5):
+            with self.subTest(seed=seed):
+                s = split_by_group(names, seed=seed, eval_groups=2, test_groups=2,
+                                   strata=strata)
+                for key in ("eval", "test"):
+                    got = {strata[names[n]] for n in s[key]}
+                    self.assertEqual(got, {"f", "m"}, f"{key} が片方の層だけ (seed={seed})")
+
+    def test_still_honours_the_requested_group_counts(self):
+        names, strata = self._names()
+        s = split_by_group(names, seed=0, eval_groups=2, test_groups=2, strata=strata)
+        self.assertEqual(len({names[n] for n in s["eval"]}), 2)
+        self.assertEqual(len({names[n] for n in s["test"]}), 2)
+
+    def test_no_group_appears_in_two_splits(self):
+        names, strata = self._names()
+        s = split_by_group(names, seed=1, eval_groups=2, test_groups=2, strata=strata)
+        for a, b in (("train", "eval"), ("train", "test"), ("eval", "test")):
+            ga = {names[n] for n in s[a]}
+            gb = {names[n] for n in s[b]}
+            self.assertEqual(ga & gb, set())
+
+    def test_is_deterministic(self):
+        names, strata = self._names()
+        a = split_by_group(names, seed=2, eval_groups=2, test_groups=2, strata=strata)
+        b = split_by_group(names, seed=2, eval_groups=2, test_groups=2, strata=strata)
+        self.assertEqual(a, b)
+
+    def test_falls_back_when_a_stratum_runs_out(self):
+        # 層の数より held-out が多いときも、要求した group 数は満たす。
+        names, strata = self._names(n_each=4)
+        s = split_by_group(names, seed=0, eval_groups=3, test_groups=1, strata=strata)
+        self.assertEqual(len({names[n] for n in s["eval"]}), 3)
+
+    def test_rejects_a_stratum_map_missing_a_group(self):
+        names, strata = self._names()
+        del strata["f0"]
+        with self.assertRaises(ValueError):
+            split_by_group(names, seed=0, eval_groups=2, test_groups=2, strata=strata)
+
+
+class LabelSecondsTests(unittest.TestCase):
+    """ラベルごとの滞在秒数（実行計画 M0 ゴール 3 の「発声スタイルの coverage」）。
+
+    技法ラベルを持つ corpus（GTSinger / VocalSet）なら、これで発声スタイルの偏りが分かる。
+    区間の長さで重み付けする。区間数を数えても、短い区間が多いだけで多いことになってしまう。
+    """
+
+    def test_sums_durations_per_label(self):
+        out = label_seconds(["belt", "breathy", "belt"], [1.0, 2.0, 0.5])
+        self.assertAlmostEqual(out["belt"], 1.5)
+        self.assertAlmostEqual(out["breathy"], 2.0)
+
+    def test_orders_by_descending_seconds(self):
+        # 偏りを見るための集計なので、多い順に並んでいないと読めない。
+        out = label_seconds(["a", "b", "c"], [1.0, 3.0, 2.0])
+        self.assertEqual(list(out), ["b", "c", "a"])
+
+    def test_breaks_ties_by_label_for_determinism(self):
+        out = label_seconds(["z", "a"], [1.0, 1.0])
+        self.assertEqual(list(out), ["a", "z"])
+
+    def test_returns_empty_for_no_segments(self):
+        self.assertEqual(label_seconds([], []), {})
+
+    def test_rejects_mismatched_lengths(self):
+        with self.assertRaises(ValueError):
+            label_seconds(["a", "b"], [1.0])
+
+    def test_rejects_negative_durations(self):
+        with self.assertRaises(ValueError):
+            label_seconds(["a"], [-1.0])
 
 
 class BuildReportTests(unittest.TestCase):

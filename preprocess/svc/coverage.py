@@ -61,3 +61,27 @@ def voiced_range(f0_hz: np.ndarray, uv: np.ndarray, *, frame_rate: float) -> dic
         "min_hz": lo, "max_hz": hi,
         "span_semitones": 12.0 * float(np.log2(hi / lo)) if lo > 0 else 0.0,
     }
+
+
+def label_seconds(labels: Sequence[str],
+                  durations: Sequence[float]) -> dict[str, float]:
+    """ラベルごとの滞在秒数を、**多い順**に返す。
+
+    発声スタイル（chest / falsetto / breathy など）の coverage 用です。技法ラベルを持つ
+    corpus（GTSinger の 6 種、VocalSet の 17 種）ならこれで偏りが分かります。
+
+    区間の長さで重み付けします。区間数を数えると、短い区間が多いだけで「多い」ことに
+    なってしまうためです。同数のときはラベル名の昇順にします（並びが安定しないと
+    集計の差分が読めない）。
+    """
+    labels = list(labels)
+    durations = [float(d) for d in durations]
+    if len(labels) != len(durations):
+        raise ValueError(f"labels and durations must match; got {len(labels)} and {len(durations)}")
+    if any(d < 0 for d in durations):
+        raise ValueError("durations must be non-negative")
+
+    total: dict[str, float] = {}
+    for label, duration in zip(labels, durations):
+        total[str(label)] = total.get(str(label), 0.0) + duration
+    return dict(sorted(total.items(), key=lambda kv: (-kv[1], kv[0])))
