@@ -1,0 +1,88 @@
+# M4: target singer への fine-tune（doc/svc-plan.md M4）。
+#
+# multi-singer base（M3, 23 話者 / 60,000 step）から**別の run_name で**続きを学習し、
+# target singer（波音リツ = spk_id 22）の音色を再現します。base は上書きしません。
+#
+#   uv run python -m train --config configs/svc_target_ft.yaml \
+#     --data_dirs data/ritsu data/ritsu_normal data/ritsu_soft \
+#     --run_name svc_ritsu_ft_01 --out_root log --device cuda \
+#     --init_from <base>/ckpt_060000.pt --finetune
+#
+# **モデル構造は base と完全に一致させます。** `--init_from ... --finetune` は同一構造の
+# checkpoint を前提としており（G 重みのみ読み込み、step / optimizer をリセット、D は新規）、
+# arch をまたぐ部分ロードは未実装です。したがって `n_speakers` は 23 のまま、`spk_dim` も
+# `hidden` も base と同じ値を書きます。**target 1 人だけを学習しても 23 話者分の
+# speaker bank は残します**（構造が変わるとロードできないため）。
+#
+# **lr を base の 8.0e-4 から 2.0e-4 へ下げています。** 1 話者のデータで backbone を
+# 元の学習率のまま押すと、未知 source を扱う汎化（M3 のゴール 3）が壊れます。M4 のゴール 2 は
+# 「train 再構成だけが改善して未知 source が悪化する場合は早期停止する」ことなので、
+# checkpoint を細かく保存し、**未知 source の指標で選びます**（下の選択規則）。
+#
+# **best checkpoint の選択規則（M4 ゴール 4）:**
+#   1. held-out 曲の eval/loss が最小のものを候補にする。
+#   2. ただし未知 source（VocalSet 40 clip）の content cos が base の 0.8599 から
+#      **0.02 を超えて落ちた checkpoint は選ばない**。target 再現と引き換えに変換器で
+#      なくなっているため。
+#   3. spectral centroid を **--transpose なし / +12 の両方**で base と比較して記録する。
+#      移調なしの数値だけで判断しないこと（doc/svc-plan.md M3 測り直し節）。
+#
+# GAN は入れません。F0 依存の傾斜は GAN では直らないと分かっているため（同上）。
+mel:
+  sr: 44100
+  hop: 256
+  n_fft: 2048
+  win: 2048
+  n_mels: 128
+  fmin: 40.0
+  fmax: 16000.0
+model:
+  arch: svc
+  content_dim: 256          # base と一致させること（ContentVec 768 の部分集合、seed 0）
+  content_layers: 2
+  content_dropout: 0.1
+  hidden: 256
+  backbone_ch: 256
+  n_cycles: 3
+  dilation_schedule: pow2_15
+  n_speakers: 23            # **base と同じ。** 構造が変わると --init_from が使えない
+  spk_dim: 32
+  n_styles: 0
+  use_uv: true
+  flow_loss: l2
+  mel_vmin: -11.5
+  mel_vmax: 2.0
+excitation:
+  n_harm: 256
+  noise_ratio: 0.05
+  exc_scale: 0.15
+  harm_decay: 1.0
+train:
+  lr: 2.0e-4                # base の 1/4。単一話者で backbone を壊さないため
+  grad_clip: 1.0
+  optimizer: radam
+  max_updates: 20000
+  max_batch_frames: 30000
+  max_batch_size: 16
+  recon_weight: 0.5
+  flow_loss: l2
+  num_steps: 1
+  save_interval: 2500       # 未知 source の指標で後から選べるよう細かく残す
+  log_interval: 50
+  eval_interval: 2500
+  eval_items: 3             # 話者ごとの本数。target 1 人なので 3 サンプル
+  vocoder: checkpoints/nhv_v3.onnx
+  num_workers: 4
+  pitch_aug: false          # SVC では使えない。train.py が SystemExit する
+  balance_speakers: true
+gan:
+  enabled: false
+  d_type: mel2d
+  cond: speaker
+data:
+  eval_songs: 3             # 波音リツは 75 曲あるので曲単位 hold-out が取れる
+  min_sec: 0.3
+  spk_map:                  # base と同じ id を維持する（3 音源とも同一話者）
+    ritsu: 22
+    ritsu_normal: 22
+    ritsu_soft: 22
