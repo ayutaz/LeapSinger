@@ -171,7 +171,9 @@ hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の 
 - 「世界初」「唯一」は使わない（rectified-flow SVC も harmonic modelling も先行研究がある）。
 - 「1-step」は acoustic flow の step 数であり、pipeline 全体の話ではない。
 
-現在の到達点は**完了レベル 3（実データ）**です。実音声から shard を作り、23 話者・約 18 時間の multi-singer base を **60,000 step** 学習し、未知 source で内容が崩壊しないことまで実測しました（M0〜M3 完了）。**target fine-tune、音質と話者類似度の評価、Seed-VC 比較、streaming student は未到達**です（`doc/svc-implementation-status.md` の検証済み / 未検証の境界を参照）。
+現在の到達点は**完了レベル 3（実データ）**です。実音声から shard を作り、23 話者・約 18 時間の multi-singer base を **60,000 step** 学習し、そこから波音リツへ **20,000 step の fine-tune** まで実施しました（M0〜M4）。**話者類似度の評価、Seed-VC 比較、streaming student は未到達**です（`doc/svc-implementation-status.md` の検証済み / 未検証の境界を参照）。
+
+**M4 で分かった trade-off（実測）:** fine-tune を進めるほど target の自己再構成は上限へ近づき（上限比 94.8% → 98.1%）、**未知 source の内容保持は単調に落ちます**（cos 0.8599 → 0.8359）。config に事前登録した規則（未知 source の cos が base から 0.02 を超えて落ちた checkpoint は選ばない）で **`ckpt_010000` を選択**しました。train loss だけで選ぶと 20,000 step を選んでしまいます。
 
 ## 既知の落とし穴
 

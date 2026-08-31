@@ -306,6 +306,8 @@ top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` / `
 ### 未検証
 
 - **音質**（内容保持・F0 追従・V/UV に加えて音の明るさも測るようになったが、それでも音質ではない）。
+- **話者類似度の測定手段。** M4 ゴール 2 の半分が測れていない（[`tools/speaker_similarity.py`](../tools/speaker_similarity.py)
+  の枠組みはあるが、encoder が歌声で較正を通らない）。**未実装**。
 - **入力の F0 に対する出力傾斜の結合を緩めること。** 2026-08-31 に 40 clip で測り直し、
   高域不足は学習不足ではなく **F0 条件への強い結合**だと分かった（男性 source を +12 半音
   すると 540 → 1196 Hz）。**変換時の移調（`--transpose`）で実用上は回避できる**が、

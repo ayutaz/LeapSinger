@@ -209,6 +209,18 @@ def cmd_logs(a):
     run(["logs", str(a.instance_id)])
 
 
+def cmd_attach(a):
+    """公開鍵をインスタンスへ登録する。
+
+    アカウントに鍵を登録していても**インスタンスには自動で付きません**。付いていないと
+    `Permission denied (publickey)` になります（実際に踏んだ）。
+    """
+    key = Path(a.pubkey).expanduser().read_text(encoding="utf-8").strip()
+    if not key.startswith(("ssh-", "ecdsa-")):
+        raise SystemExit(f"{a.pubkey} が公開鍵に見えません（秘密鍵を渡していないか確認）")
+    run(["attach", "ssh", str(a.instance_id), key])
+
+
 def cmd_destroy(a):
     if not a.yes:
         print(f"インスタンス {a.instance_id} を破棄します（データは消えます・取り消し不可）。\n"
@@ -254,6 +266,11 @@ def main():
         p = sub.add_parser(name, help=helptext)
         p.add_argument("instance_id", type=int)
         p.set_defaults(fn=fn)
+
+    at = sub.add_parser("attach", help="公開鍵をインスタンスへ登録する（publickey 拒否の対処）")
+    at.add_argument("instance_id", type=int)
+    at.add_argument("--pubkey", default="~/.ssh/id_ed25519_vast.pub")
+    at.set_defaults(fn=cmd_attach)
 
     d = sub.add_parser("destroy", help="インスタンスを破棄する（取り消し不可）")
     d.add_argument("instance_id", type=int)
