@@ -665,6 +665,22 @@ M3 完了。**base の状態を引き継ぐ点に注意します。**
 
 **要ユーザー判断:** speaker embedding を残して target ID を固定するか、embedding を焼き込んで speaker 入力のないモデルにするか。**推奨:** base 学習中は話者条件を残し、固定化は fine-tune と配布の段階で判断します。
 
+**未実装（2026-08-31）: ゴール 2 の target similarity を測る手段がまだありません。**
+枠組みは [`tools/speaker_similarity.py`](../tools/speaker_similarity.py) に作りました
+（上限＝target の別クリップどうし / 下限＝無関係な話者 / 回復率。`m3_verify.py` の
+content cos と同じ読み方）。**ただし既定の encoder が歌声で使えません。**
+
+| ペア（VocalSet 20 歌手 × 同一技法 4 clip） | cos |
+|---|---|
+| 同一話者 | 0.7533 ± 0.1379 |
+| 別話者・同性 | 0.6961 ± 0.1476 |
+| 別話者・異性 | 0.6813 ± 0.1323 |
+
+`microsoft/wavlm-base-plus-sv` は同一話者の下位 5% を**別話者・同性ペアの 88.3%** が超え、
+判別できていません（話し声で学習した話者照合モデルを歌声に当てた結果）。**歌声で較正を
+通る encoder に差し替えるまで、target similarity の数値を報告しません。** encoder は
+`embed` 引数で差し替えられるので、モデルを決めれば較正のやり直しだけで済みます。
+
 ---
 
 ## M5. offline 品質ゲート（Seed-VC 比較）

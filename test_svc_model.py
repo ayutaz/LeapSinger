@@ -342,3 +342,94 @@ class BandProfileTests(unittest.TestCase):
     def test_returns_empty_for_a_signal_shorter_than_the_window(self):
         from tools.audio_metrics import band_profile
         self.assertEqual(band_profile(np.zeros(128, dtype=np.float32), self.SR), {})
+
+
+class SpeakerSimilarityTests(unittest.TestCase):
+    """M4 ゴール 2 の target similarity。
+
+    **単独の cos 値には意味がありません。** 話者照合の埋め込みは、同一話者の別クリップ
+    どうしでも 1.0 にはならず、無関係な話者どうしでも 0 にはなりません。`m3_verify.py` の
+    content cos と同じく、**上限（target の別クリップどうし）と下限（無関係な話者）を
+    必ず並べ**、回復率で読みます。
+
+    埋め込みモデルは引数で受け取ります（`extract_phrase` と同じ理由。単体テストを重い
+    事前学習モデルとネットワークに依存させないため）。
+    """
+
+    SR = 16000
+
+    def _wavs(self, n, seed=0):
+        r = np.random.default_rng(seed)
+        return [r.standard_normal(self.SR // 4).astype(np.float32) for _ in range(n)]
+
+    def _embed_from(self, table):
+        """wav の先頭サンプルを key にして、決められた埋め込みを返す偽 encoder。"""
+        def embed(wav, sr):
+            return np.asarray(table[float(wav[0])], dtype=np.float32)
+        return embed
+
+    def test_cosine_of_identical_vectors_is_one(self):
+        from tools.speaker_similarity import cosine
+        v = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+        self.assertAlmostEqual(cosine(v, v), 1.0, places=6)
+
+    def test_cosine_of_orthogonal_vectors_is_zero(self):
+        from tools.speaker_similarity import cosine
+        a = np.array([1.0, 0.0], dtype=np.float32)
+        b = np.array([0.0, 1.0], dtype=np.float32)
+        self.assertAlmostEqual(cosine(a, b), 0.0, places=6)
+
+    def test_the_ceiling_uses_distinct_reference_pairs_only(self):
+        # 自分自身との組を数えると上限が 1.0 に張り付き、基準として使えなくなる。
+        from tools.speaker_similarity import similarity_report
+        refs = self._wavs(3, seed=1)
+        table = {float(w[0]): [1.0, 0.0] for w in refs}
+        conv = self._wavs(1, seed=2)
+        table[float(conv[0][0])] = [1.0, 0.0]
+        rep = similarity_report(conv, refs, embed=self._embed_from(table), sr=self.SR)
+        self.assertEqual(rep["target_self_ceiling"]["n"], 3)      # 3 本なら 3 組
+
+    def test_compares_every_converted_clip_against_every_reference(self):
+        from tools.speaker_similarity import similarity_report
+        refs, conv = self._wavs(3, seed=1), self._wavs(2, seed=2)
+        table = {float(w[0]): [1.0, 0.0] for w in refs + conv}
+        rep = similarity_report(conv, refs, embed=self._embed_from(table), sr=self.SR)
+        self.assertEqual(rep["converted_vs_target"]["n"], 6)
+
+    def test_recovery_is_one_when_the_conversion_matches_the_target(self):
+        from tools.speaker_similarity import similarity_report
+        refs, conv, other = self._wavs(2, seed=1), self._wavs(2, seed=2), self._wavs(2, seed=3)
+        table = {float(w[0]): [1.0, 0.0] for w in refs + conv}
+        table.update({float(w[0]): [0.0, 1.0] for w in other})
+        rep = similarity_report(conv, refs, other, embed=self._embed_from(table), sr=self.SR)
+        self.assertAlmostEqual(rep["recovery"], 1.0, places=5)
+
+    def test_recovery_is_zero_when_the_conversion_matches_the_unrelated_speaker(self):
+        from tools.speaker_similarity import similarity_report
+        refs, conv, other = self._wavs(2, seed=1), self._wavs(2, seed=2), self._wavs(2, seed=3)
+        table = {float(w[0]): [1.0, 0.0] for w in refs}
+        table.update({float(w[0]): [0.0, 1.0] for w in conv + other})
+        rep = similarity_report(conv, refs, other, embed=self._embed_from(table), sr=self.SR)
+        self.assertAlmostEqual(rep["recovery"], 0.0, places=5)
+
+    def test_rejects_a_single_reference_clip(self):
+        # 1 本では上限が作れない。黙って上限なしの数値を返さない。
+        from tools.speaker_similarity import similarity_report
+        refs, conv = self._wavs(1, seed=1), self._wavs(1, seed=2)
+        table = {float(w[0]): [1.0, 0.0] for w in refs + conv}
+        with self.assertRaises(ValueError):
+            similarity_report(conv, refs, embed=self._embed_from(table), sr=self.SR)
+
+    def test_embeds_each_clip_exactly_once(self):
+        # ペアごとに呼ぶと実モデルでは組合せ爆発する。
+        from tools.speaker_similarity import similarity_report
+        refs, conv, other = self._wavs(3, seed=1), self._wavs(2, seed=2), self._wavs(2, seed=3)
+        table = {float(w[0]): [1.0, 0.0] for w in refs + conv + other}
+        calls = []
+        base = self._embed_from(table)
+
+        def counting(wav, sr):
+            calls.append(float(wav[0]))
+            return base(wav, sr)
+        similarity_report(conv, refs, other, embed=counting, sr=self.SR)
+        self.assertEqual(len(calls), 7)
