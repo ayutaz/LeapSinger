@@ -41,7 +41,7 @@ target singer の train 曲、同一 take、近重複 clip は test から除外
 | 観点 | 候補指標 | 注意 |
 |---|---|---|
 | pitch 保持 | F0 correlation、F0 RMSE、V/UV error | extractor 自身の誤りを別途監査する |
-| target similarity | speaker embedding cosine / SECS | singing domain 対応 encoder を比較する |
+| target similarity | speaker embedding cosine / SECS | **手元の x-vector encoder 2 本は歌声で較正を通らない**（下記）。encoder を先に検証すること |
 | intelligibility | CER / phoneme error | 日本語歌唱 ASR の bias を明記する |
 | signal quality | SIG / BAK / OVRL、DNSMOS 系 | music/singing への妥当性を過信しない |
 | spectral | mel/STFT distance、MCD | parallel reference がある subset に限定 |
@@ -51,6 +51,30 @@ target singer の train 曲、同一 take、近重複 clip は test から除外
 | streaming | algorithmic latency、end-to-end latency、boundary error | 実機 audio I/O で測る |
 
 一つの総合点へ早期に集約せず、pitch・内容・target similarity・artifact・latency を別軸で報告します。
+
+**確認済み（2026-08-31、M4）: 話者類似度は「まだ測れていない」が正確です。** 枠組みは
+[`tools/speaker_similarity.py`](../tools/speaker_similarity.py) にあり、**上限**（target の別クリップ
+どうし）・**下限**（無関係な話者）・回復率という、内容保持と同じ読み方をします。しかし
+`transformers` の x-vector モデル 2 本を素材を変えて 3 通り較正したところ、最も公平な条件
+（同一技法・別の曲の抜粋）でも**同性間で分離できませんでした**。
+
+| 素材 / モデル | 同一話者 | 別話者・同性 | 別話者・異性 | 重なり |
+|---|---|---|---|---|
+| arpeggios 4 本 / wavlm-base-plus-sv | 0.7533 | 0.6961 | 0.6813 | 88.3% |
+| 同上 / unispeech-sat-base-plus-sv | 0.7426 | 0.6970 | 0.6400 | 93.9% |
+| **excerpts 3 曲 / wavlm-base-plus-sv** | **0.8307** | **0.7713** | **0.5199** | **83.3%** |
+
+**決定: 同性間の target similarity は、歌声で較正を通る encoder に差し替えるまで報告しません。**
+異性間（0.5199 対 0.8307）は分かれるので、粗い確認にのみ使えます。**較正を通していない
+encoder の cosine を「話者類似度」として出さないこと。** この表が無ければ、0.77 という数値は
+一見それらしく見えます。
+
+**確認済み（2026-08-31、M4）: 明るさを符号つき平均で評価しないこと。** 上限より明るい clip と
+暗い clip が打ち消し合い、**平均は良く見えるのに実際は両方向へ外れている**ことが起きます
+（実測で範囲 −70% 〜 +33%）。**上限からの距離（絶対値）**で見ます。この誤りで「多 step にすると
+明るさが戻る」という結論を一度出しました。また **spectral centroid は測定時の移調条件に強く
+依存する**ので、`--transpose` の値を必ず併記します（同じ clip が 0 半音で 540 Hz、
++12 半音で 1196 Hz）。
 
 **確認済み（2026-08-30、M3）: 内容指標は音の劣化を検知しません。** 推論条件の不具合で spectral centroid が 620 → 368 Hz へ落ちたとき、content cos は 0.8217 → 0.8096 としか動かず、F0 相関も V/UV もほぼ無反応でした。**耳で「こもっている」と分かる差です。** 内容・音高の指標が揃って良いことを音質の根拠にしないでください。
 
@@ -114,6 +138,9 @@ failure clip は削除せず、category と suspected component を付けます�
 - unseen-source / held-out-song で重大な内容崩壊がない。
 - Seed-VC baseline に対する blind preference を記録済み。
 - target similarity の改善が pitch / intelligibility の悪化だけで得られていない。
+  **前提として、使う speaker encoder が上限・下限・重なりの較正を歌声で通っていること**（4 節）。
+- 未知 source の内容保持が base から落ちていないこと。**M4 で、target の再現と未知 source の
+  保持が単調に逆へ動くことを実測しました。**片方だけの改善を品質向上と呼ばないこと。
 - streaming では teacher との差と実測遅延を同時に提示できる。
 
 ## 9. 報告テンプレート

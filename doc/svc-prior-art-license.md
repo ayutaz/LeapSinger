@@ -111,3 +111,10 @@ offline model の future context を除くと子音、vibrato、phrase boundary 
 - 「リアルタイム」は対象 hardware の end-to-end latency と連続動作後にのみ使う。
 - 「少量データ」は時間だけでなく歌手数、coverage、権利、split を併記する。
 - 「1-step」は acoustic flow の step 数であり、全 pipeline が 1 operation という意味ではない。
+- **「target に似ている」「話者類似度が高い」は、使った encoder の較正表（同一話者 / 別話者・同性 /
+  別話者・異性の分布と重なり）を同時に示すときにのみ使う。** 較正を通していない cosine は、
+  それらしい数値に見えても意味が定まりません（2026-08-31 に実測。[評価計画](svc-evaluation.md) 4 節）。
+- **自己再構成（target を target へ変換して元と比べる）を話者類似度として提示しない。** 別人の声を
+  target へ寄せられたかとは別の量です。
+- **明るさ・音色の指標には測定時の移調条件（`--transpose`）を併記する。** 同じ clip が 0 半音で
+  540 Hz、+12 半音で 1196 Hz になります。

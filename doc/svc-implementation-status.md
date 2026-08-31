@@ -1,6 +1,6 @@
 # SVC 実装状況と再現手順
 
-確認日: 2026-08-30
+確認日: 2026-09-01
 
 対象ブランチ: `feature/svc`
 
@@ -33,9 +33,11 @@
 | [`tools/m3_verify.py`](../tools/m3_verify.py) | 追加済み | M3 ゴール 3。未知 source の内容保持を content cos で測る（上限・下限つき）＋ 音の明るさ |
 | [`tools/svc_convert.py`](../tools/svc_convert.py) | 追加済み | 任意の WAV を学習済みモデルで変換する CLI。`--self-check` でボコーダー由来の劣化を分離、`--match-loudness` で入力を学習分布へ寄せる |
 | [`tools/audio_metrics.py`](../tools/audio_metrics.py) | 追加済み | 帯域エネルギー比と spectral centroid。**内容指標が検知しない高域の欠落**を測る |
+| [`tools/speaker_similarity.py`](../tools/speaker_similarity.py) | 追加済み（**使えない**） | M4 ゴール 2 の話者類似度。上限・下限・回復率の枠組みはあるが、**既定 encoder が歌声の同性ペアで較正を通らない** |
+| [`configs/svc_target_ft.yaml`](../configs/svc_target_ft.yaml) | 追加済み | M4 の recipe。**checkpoint 選択規則を header に明記**（train loss だけで選ばない） |
 | [`configs/svc_base_multi.yaml`](../configs/svc_base_multi.yaml) | 追加済み | M3 の recipe。`spk_map` / `n_speakers` は素材から生成 |
 | [`test_svc_preprocess_integration.py`](../test_svc_preprocess_integration.py) | 追加済み | 実モデルを使う統合テスト（既定 skip） |
-| [`test_svc_preprocess.py`](../test_svc_preprocess.py) | 追加済み | 整列 / 部分集合 / loudness / shard / 抽出 / chunk / 命名 / 分量選択の契約テスト（103 件） |
+| [`test_svc_preprocess.py`](../test_svc_preprocess.py) | 追加済み | 整列 / 部分集合 / loudness / shard / 抽出 / chunk / 命名 / 分量選択の契約テスト（115 件） |
 | [`test_svc_dataset.py`](../test_svc_dataset.py) | 追加済み | audit / coverage / split / report / GTSinger の wav 選択の契約テスト（63 件） |
 | [`tools/smoke/`](../tools/smoke/) | 追加済み | 全経路の疎通を 1 コマンドで回す（12 ステージ） |
 | [`tools/hooks/`](../tools/hooks/) | 追加済み | 常に誤りのコマンドを実行前に止める guard と回帰テスト |
@@ -77,11 +79,11 @@ data/<db>/svc_shard.npz
 
 | key | required shape | dtype の想定 |
 |---|---:|---|
-| `<name>|content` | `[T, content_dim]`（既定 256） | float32 |
-| `<name>|f0_interp` | `[T]` | float32 Hz |
-| `<name>|uv` | `[T]` | float32 / bool compatible |
-| `<name>|loudness` | `[T]` | float32 |
-| `<name>|mel` | `[128, T]` | float32 ln-mel |
+| `<name>\|content` | `[T, content_dim]`（既定 256） | float32 |
+| `<name>\|f0_interp` | `[T]` | float32 Hz |
+| `<name>\|uv` | `[T]` | float32 / bool compatible |
+| `<name>\|loudness` | `[T]` | float32 |
+| `<name>\|mel` | `[128, T]` | float32 ln-mel |
 
 loader は feature width、mel bins、全配列の `T` を検証し、暗黙 transpose / interpolation を行いません。
 
@@ -158,7 +160,7 @@ Python 3.13 / torch 2.13 / librosa 1.0 へ更新した後、次を上記環境�
 
 ### 確認済み
 
-- 自動テスト **197 件**が成功（`test_svc_model` 25 / `test_svc_preprocess` 109 / `test_svc_dataset` 63）。重いモデルもネットワークも使いません。実モデルの統合テストは 4 件で、`LEAPSINGER_INTEGRATION=1` のときだけ走ります。
+- 自動テスト **211 件**が成功（`test_svc_model` 33 / `test_svc_preprocess` 115 / `test_svc_dataset` 63）。重いモデルもネットワークも使いません。実モデルの統合テストは 4 件で、`LEAPSINGER_INTEGRATION=1` のときだけ走ります。
 - コマンド guard の回帰テスト **51 件**（`tools/hooks/test_guard.py`）。止めすぎ検出のため、通ってほしいケースも同数以上入れています。
 - **実音声 5 コーパスへの検査・coverage・split**（M0。下記「M0 の実データ検証」）。
 - padding された frame が有効 frame に影響しないこと。
@@ -295,6 +297,39 @@ phrase 名の衝突による cache の黙った上書き、日本語曲名の消
 
 実測環境は RTX 4090 で **11.74 step/s**（3090 比 1.44 倍）、peak VRAM 2.0 GB、実費 **$2.148**。
 
+### M4（target fine-tune）の実証（2026-08-31）
+
+**確認済み:** `ckpt_060000.pt`（23 話者 base）から波音リツへ 20,000 step の fine-tune を実施しました。
+RTX 3090、`configs/svc_target_ft.yaml`、`--init_from ... --finetune`。base は上書きしていません
+（別 `run_name`）。成果物は手元の `.m0data/m4/` に sha256 照合済みで回収してあります。
+詳細は [実行計画](svc-plan.md) M4 の進捗節。
+
+| 実測 | 値 |
+|---|---|
+| 素材 | 波音リツ 3 音源 / 3,414 phrase（train 3,213 / eval 191）/ 約 7.6 時間 / hold-out 6 曲 |
+| 速度 | **4.06 step/s** / 64.9 examples/s / 89,491 frames/s / 20,000 step で **82 分** |
+| **peak VRAM** | **2.08 GB** |
+| eval/loss | 0.01202（2,500 step）→ **0.01129**（20,000 step）。単調減少 |
+
+**確認済み: target の再現と未知 source の内容保持は逆向きに動きます。**
+
+| | target 自己再構成（上限比） | 未知 source の content cos |
+|---|---:|---:|
+| base（60,000） | 94.8% | 0.8599 |
+| ft 10,000（**採用**） | 96.8% | 0.8440 |
+| ft 20,000 | 98.1% | 0.8359 |
+
+**採用は `ckpt_010000`。** `configs/svc_target_ft.yaml` に**実験前から書いてあった**規則
+（未知 source の cos が base から 0.02 を超えて落ちた checkpoint は選ばない）が 15,000 step で
+発動し、通過した候補のうち eval/loss が小さいほうを選びました。**train loss だけで選ぶと
+20,000 step を選びます**（M4 ゴール 4 が要求していた失敗の形）。
+
+**確認済み: fine-tune では F0 依存の傾斜は直りません。** 未知 source の明るさの偏差は
+33.7 → 37.5 と悪化し、+12 半音の条件でも base 30.0 対 ft 30.8 でした。
+
+**未測定: ゴール 2 の話者類似度。** ここでの target 側の数値は**自己再構成**であり、
+「別人の声が target に聞こえるか」ではありません（下記「未検証」）。
+
 ### 制限付き
 
 top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` / `test_svc_dataset.py` の
@@ -314,25 +349,29 @@ top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` / `
   モデル側で緩めるには特徴抽出前の pitch augmentation が要る（**未実装**）。
 - **話し声（非歌唱）入力への対応**。学習素材が歌唱のみのため分布外で、移調では直らない
   （+12 にしても −28.2%）。**未実装**。
-- **target timbre の再現・話者類似度**（M4 の担当）。
-- 256 次元部分集合の seed 比較の**反復**（1 度は実施済み。各 1 run では部分集合の差と run のばらつきを分離できない）。
-- target fine-tune（M4）。
+- **target timbre が「別人の声を target に寄せられているか」。** M4 で測ったのは target 自身の
+  **自己再構成**（上限比 94.8% → 98.1%）であって、話者変換の成否ではありません。上の
+  「話者類似度の測定手段」が無いため、**M4 ゴール 2 の半分は未達のまま**です。
+- 256 次元部分集合の seed 比較の**反復**（1 度は実施済み。各 1 run では部分集合の差と run のばらつきを分離できない）。**M4 まで反復せずに進みました。**
 - SVS checkpoint の安全な部分 warm-start。
 - Seed-VC との客観・主観比較。
 - NHVSing target fine-tune。
 - causal / limited-lookahead model、distillation、streaming I/O。
-- GPU peak memory と長時間 run の training time（throughput は A4000 で 13〜15 step/s を実測済み）。
 - end-to-end RTF / latency / 長時間連続動作。
+- **`--transpose` を使った変換の主観品質。** 移調で明るさが戻ることは測りましたが、
+  移調そのものが自然さに与える影響は聴いて確かめていません。
 
 ## 6. 次の実装順序
 
 1. ~~ContentVec/HuBERT + RMVPE + loudness の再現可能な extractor~~ — **完了**（M1）。
 2. ~~実 audio での preprocessing smoke~~ — **完了**（M1、波音リツ実音声）。
 3. ~~1〜数 phrase overfit と WAV 出力~~ — **完了**（M2）。
-4. ~~multi-singer base~~ — **完了**（M3）。target fine-tune（M4）。
-5. SVS -> SVC shared-weight warm-start loader と load-report tests（条件付きトラック A。M3 のコストが問題になった場合のみ）。
-6. Seed-VC comparison suite と blind review artifact（M5）。
-7. offline gate 後に streaming student（M6）。
+4. ~~multi-singer base~~ — **完了**（M3）。
+5. ~~target fine-tune~~ — **実施済み**（M4）。ただし**話者類似度が未測定**なので、ゴール 2 は半分だけです。
+6. **歌声で較正を通る話者照合 encoder への差し替え**（M4 ゴール 2 の残り。**依存の追加が要る**ため要ユーザー判断）。
+7. SVS -> SVC shared-weight warm-start loader と load-report tests（条件付きトラック A。M3 のコストが問題になった場合のみ）。
+8. Seed-VC comparison suite と blind review artifact（M5）。
+9. offline gate 後に streaming student（M6）。
 
 ## 7. ブランチと作業ツリー
 

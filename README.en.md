@@ -187,10 +187,13 @@ audit/coverage/split tooling are implemented. The content encoder is **ContentVe
 (768-dim layer 12; training uses a fixed random 256-dim subset), F0 is **RMVPE**, and SSL
 frames are aligned to the mel grid by **left (hold-previous)**. The extractor that runs ContentVec to build
 the feature shard is implemented as well: one command turns a WAV directory into a shard,
-bit-identical on re-run. Overfitting a real phrase and producing a WAV has been verified, and a **multi-singer base
-model over 23 speakers / ~18 hours** has been pretrained (content is preserved for an unseen
-source singer, measured). **Target fine-tuning, quality/speaker-similarity evaluation, and the
-real-time student are not done yet.**
+bit-identical on re-run. Overfitting a real phrase and producing a WAV has been verified, a **multi-singer base
+model over 23 speakers / ~18 hours** has been pretrained for 60,000 steps (content is preserved
+for an unseen source singer, measured), and that base has been **fine-tuned to a target singer
+for 20,000 steps**. **Quality evaluation, the Seed-VC comparison, and the real-time student are
+not done yet.** Speaker similarity is not merely unmeasured but currently *unmeasurable* here:
+the x-vector encoders we calibrated cannot separate same-gender singers, so "target likeness"
+is not something this project reports yet.
 The Japanese research suite covering requirements, architecture, data/GPU, training,
 evaluation, prior art/licensing, implementation status, and sources is indexed at
 [doc/svc.md](doc/svc.md).

@@ -76,12 +76,14 @@ uv run python tools/vast.py create <offer_id> --disk 60 --yes
 | 事象 | 対処 |
 |---|---|
 | `vastai execute <id> '<cmd>'` は**制限付き**で、任意コマンドは `Invalid command given` (400) | **SSH を使う。** `execute` は当てにしない |
-| SSH には**鍵の登録**が要る | `vastai show ssh-keys` で確認。無ければ `vastai create ssh-key`。**アカウントに登録済みの鍵が手元の鍵とは限りません**（実測: 登録は別マシンの鍵で、手元の `~/.ssh/id_ed25519_vast` では `Permission denied (publickey)` になった）。その場合は**インスタンスへ個別に付ける**: `vastai attach ssh <instance_id> "$(cat ~/.ssh/id_ed25519_vast.pub)"`。数秒で有効になる |
+| SSH には**鍵の登録**が要る | `vastai show ssh-keys` で確認。無ければ `vastai create ssh-key`。**アカウントに登録済みの鍵が手元の鍵とは限りません**（実測: 登録は別マシンの鍵で、手元の `~/.ssh/id_ed25519_vast` では `Permission denied (publickey)` になった）。その場合は**インスタンスへ個別に付ける**: `uv run python tools/vast.py attach <instance_id>`（既定 `~/.ssh/id_ed25519_vast.pub`。秘密鍵を渡すと止まる）。数秒で有効になる。**作成直後に済ませること**（M4 で 15 分を無駄にした） |
 | `vastai destroy instance` は確認プロンプトを出し、stdin が無いと `Aborted.` | `-y` が要る。`tools/vast.py` が渡すようにした |
 | `search offers 'id=<N>'` が、その offer が実在しても**空を返す** | `create` の料金プレビューは当てにならない。**一覧に出ている価格を見る** |
 | offer ID の**回転が速い** | 検索してすぐ作る。数分置くと消える |
 | インスタンスの `logs` には bootstrap の出力が出ない | onstart は `/root/bootstrap.log` へ落としてある。SSH で見る |
 | アカウントに**自分が作っていないインスタンス**が居ることがある | `label` と `image` で見分ける。**自分のもの以外は触らない** |
+| Windows から書いたスクリプトを `bash -s` で流すと `set: pipefail: invalid option name` | **CRLF が混ざっている。** Python で書くなら `write_text` に `newline="\n"` を渡す |
+| `set -euo pipefail` のスクリプトが nvidia-smi の直後に無言で死ぬ | `cmd \| tee f \| head` の **SIGPIPE**。`head` が先に閉じると `pipefail` + `set -e` で run 全体が落ちる。**先頭数行だけ見る用途で `head` をパイプの末尾に置かない** |
 | `show instances` が日本語 Windows で `'cp932' codec can't encode character` で落ちる | `tools/vast.py` が出力を UTF-8 で受けてから安全に表示するようにした |
 | `create` の応答に **`instance_api_key` が平文で出る** | `tools/vast.py` が伏せるようにした。**ログにもチャットにも残さない** |
 
@@ -183,6 +185,15 @@ scp -i ~/.ssh/id_ed25519_vast -P <port> -r root@<host>:/root/LeapSinger/log/<run
 ```
 
 学習中も定期的に退避する。インスタンスは落ちることがある。
+
+**回収の遅さがそのまま料金になる。** M4 では 141 MB の checkpoint 3 本の scp に時間がかかり、
+**約 40 分ぶんインスタンスを空回し**させました（実費 $0.75 は見積もり $0.35 の 2.1 倍。
+**超過はすべて段取りで、GPU 時間そのものは見積もりどおり**でした）。次のどちらかにします。
+
+- **学習中から細かく回収する**（checkpoint は書かれた端から落とす）。
+- **先に指標だけ回収して checkpoint を選び、必要な 1 本だけ落とす。**
+
+大きいファイルは `sha256sum` を両側で突き合わせること。scp は**黙って途中で切れます**（実際に発生）。
 
 **M2 で実際に回収したもの:** 生成 WAV 2 本（予測と ground-truth mel 経由）、`m2_report.json`、
 TensorBoard の events、shard の `manifest.json`。checkpoint は 141 MB あるので、必要なものだけ選ぶ。

@@ -119,6 +119,31 @@ uv run python -m train --config <config> \
 - train/validation 曲線、生成サンプル、失敗例のリスト
 - best checkpoint の選び方、途中再開の履歴
 
+### checkpoint の選択規則は、走らせる**前**に config へ書く
+
+**実測（M4）:** target fine-tune では **target の再現と未知 source の内容保持が単調に逆へ動きます**
+（上限比 94.8% → 98.1% に対し、content cos 0.8599 → 0.8359）。**train loss も eval loss も
+最後の checkpoint が最小**なので、loss だけで選ぶと最悪のものを選びます。
+
+[`configs/svc_target_ft.yaml`](../../../configs/svc_target_ft.yaml) の header に
+
+> 未知 source の cos が base から 0.02 を超えて落ちた checkpoint は選ばない
+
+と**書いてから**走らせ、規則は 15,000 step で発動しました。後から決めると、出た数字を見て
+基準のほうを動かせてしまいます。
+
+- **規則は「除外条件」の形で書く。** 「良いほうを選ぶ」ではなく「これを満たさないものは候補外」。
+- **`save_interval` を十分細かく。** 規則が発動した位置の手前に候補が無いと選びようがありません
+  （M4 は 2,500 step ごと・20,000 step で 8 本）。
+- **明るさは移調あり・なしの両方で記録する**（`--transpose` 0 と +12）。片方だけでは、
+  モデルの品質ではなく source と target の音域差を測ってしまいます。
+
+### `perf.json` の値は瞬間値
+
+**実測:** M3 base の 8.14 step/s は step 1,000 時点の値で、M4 の 4.06 step/s は eval と
+checkpoint 保存を含む長時間の平均です。**同じ 3090 でも 2 倍違います。** 所要時間と料金を
+見積もるときは、eval 頻度と保存本数を込みで考えること。
+
 **M3 で実際に回収したもの（同じ粒度で残す）:** `ckpt_030000.pt`、`config.yaml`、`perf.json`、
 TensorBoard の events、**話者 25 分の `manifest.json` / `metadata.json`**、`m3_corpus.json`（素材の
 選定）、抽出と学習のログ、検証の JSON と WAV、`nvidia-smi` の出力。**インスタンスのディスクは

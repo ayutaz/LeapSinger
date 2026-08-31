@@ -92,11 +92,11 @@ data/<dataset>/
 
 | key | shape |
 |---|---:|
-| `<name>|content` | `[T, content_dim]` |
-| `<name>|f0_interp` | `[T]` |
-| `<name>|uv` | `[T]` |
-| `<name>|loudness` | `[T]` |
-| `<name>|mel` | `[128, T]` |
+| `<name>\|content` | `[T, content_dim]` |
+| `<name>\|f0_interp` | `[T]` |
+| `<name>\|uv` | `[T]` |
+| `<name>\|loudness` | `[T]` |
+| `<name>\|mel` | `[128, T]` |
 
 すべての `T` は完全一致させます。loader は silent transpose や自動補間をせず、前処理ミスを明示的に失敗させます。
 
@@ -125,8 +125,12 @@ data/<dataset>/
 `max_batch_size: 16` が先に効いて 1 batch は約 22,000 フレームで頭打ちになります。**VRAM ではなく
 batch 本数が制約**でした。24 GB のカードを取っても 2 GB しか使っていません。
 
-**含意:** multi-singer base だけなら **8〜12 GB のカードで足ります**（より安い offer が選べます）。
-24 GB 級が要るのは、`max_batch_size` を上げる・GAN を足す・crop を伸ばすときです。
+**確認済み（2026-08-31 実測、M4 の target fine-tune）: peak VRAM は 2.08 GB でした。**
+上表の「target fine-tune は 16 GB」も外しています。base（1.95 GB）とほぼ同じで、**fine-tune が
+base より軽いわけでも重いわけでもありません**（同じ構造・同じ batch 設定だから当然です）。
+
+**含意:** multi-singer base も target fine-tune も **8〜12 GB のカードで足ります**（より安い offer が
+選べます）。24 GB 級が要るのは、`max_batch_size` を上げる・GAN を足す・crop を伸ばすときです。
 まだ measure していない条件へこの数字を外挿しないでください。
 
 **確認済み:** 現在の開発機は RTX 4070 Ti SUPER 16 GB（driver 596.21 / torch 2.13.0+cu130、詳細は [実装状況](svc-implementation-status.md) の「実行環境」表）です。上表の基準では target fine-tune は手元で回せる一方、multi-singer base pretraining の推奨基準 24 GB には届きません。**決定:** 学習は vast.ai の Linux GPU インスタンスで行い、手元の Windows 機は開発・推論・検証に使います。したがって上表の 24 GB / 48 GB 級はインスタンスの選択で満たせます。**見積もり:** インスタンスは時間課金なので、必要 VRAM だけでなく「1 実験あたり何時間か」で選ぶことになります。最初の 100 / 1,000 update の実測（examples/sec、frames/sec、peak VRAM）が、そのまま料金の見積もりになります。
@@ -150,7 +154,7 @@ gan.enabled: false
 
 ## 8. 学習時間の目安
 
-**未検証見積もり:** 小規模 target fine-tune の所要時間は、データ長、更新回数、feature cache、GAN の有無で大きく変わります。
+**見積もり（M4 で一部を実測へ置き換え済み。下の「M4」節を先に読んでください）:** 小規模 target fine-tune の所要時間は、データ長、更新回数、feature cache、GAN の有無で大きく変わります。
 
 | GPU class | 初期 PoC の大まかな期待 |
 |---|---|
@@ -195,6 +199,37 @@ VRAM は batch にほぼ比例するので 24 GB なら 128 も載りますが�
 
 **注意:** 同じ学習量で比べると差は上の 1.35 倍ぶんだけで、しかも大きい batch は学習率の
 再調整が要るのが普通です。丸ごと得られるとは限りません。
+
+### M4（target fine-tune）の実測（2026-08-31、RTX 3090 24 GB / $0.16 per hour）
+
+**確認済み:** 波音リツ 3 音源・3,414 phrase（約 7.6 時間）を 20,000 step。
+
+| 工程 | 実測 |
+|---|---|
+| 素材の取得と特徴抽出 | インスタンス上で実行。shard 作成まで含めて学習開始前に完了 |
+| fine-tune | **4.06 step/s**、64.9 examples/s、89,491 frames/s |
+| 20,000 step の所要 | **82 分** |
+| peak VRAM | **2.08 GB**（6 節） |
+| eval/loss | 0.01202（2,500）→ 0.01129（20,000） |
+
+**base より step/s が落ちている点に注意**（8.14 → 4.06）。GPU が同じ 3090 でも、M3 の
+8.14 step/s は step 1,000 時点の値で、eval と checkpoint 保存を含む長時間平均ではありません。
+**perf.json の瞬間値を所要時間の見積もりにそのまま使わないこと。**
+
+#### 費用は見積もりの 2.1 倍になった。原因は GPU ではない
+
+**確認済み:** 実費およそ **$0.75**（4.4 時間 × $0.16）に対し、見積もりは $0.35 でした。
+**GPU 時間そのものは見積もりどおり**（学習は 82 分）で、超過はすべて段取りです。
+
+| 内訳 | 損失 | 原因 |
+|---|---|---|
+| SSH 鍵 | 約 15 分 | アカウントの公開鍵がインスタンスに登録されておらず `Permission denied` |
+| スクリプトの不具合 | 約 7 分 | `nvidia-smi \| tee \| head` の SIGPIPE が `pipefail` + `set -e` で run 全体を落とした |
+| checkpoint の回収 | 約 40 分 | 141 MB × 3 本の scp が遅く、その間インスタンスを空回しさせた |
+
+**次回の対策:** 鍵は `uv run python tools/vast.py attach <id>` で先に登録する。回収は学習中から
+細かく始めるか、**checkpoint を選んでから必要な 1 本だけ落とす**。時間課金なので、
+「待っている間」がそのまま料金です。
 
 ### 通信量にも課金される（見落としやすい）
 

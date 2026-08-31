@@ -74,6 +74,24 @@ waveform-like excitation -> STFT/mel -> pseudo mel x0
 
 **仮説:** pitch 構造を最初から持つ `x0` は 1-step transport を助けます。ただし、harmonic modelling や rectified-flow SVC 自体は先行研究があり、この組み合わせだけから新規性を断定しません。
 
+**確認済み（2026-08-31、M3 の測り直し）: この設計の代償として、出力のスペクトル傾斜が入力 F0 に
+強く従います。** content と loudness を固定して F0 だけを ±12 半音する交差実験で、男性 source の
+spectral centroid が 540 → **1196 Hz**、女性 source が 1067 → 378 Hz と動きました。**target を
+男性に替えても男性 source の出力は動きません**（−37.8% 対 −38.1%）。つまり明るさを決めているのは
+speaker 条件ではなく `x0` の側です。
+
+倍音インパルスの倍音列は F0 に比例して間隔が広がるので、`x0` の帯域構造そのものが F0 で決まります。
+**低い F0 の source を高い音域の target へ変換すると、`x0` は学習時に見た target の分布から外れます。**
+
+含意:
+
+- **変換時は `--transpose` で source F0 を移調する**（male source → female target で +7〜+12 半音）。
+  実用上はこれで回避できます（[`tools/svc_convert.py`](../tools/svc_convert.py)）。
+- **fine-tune では緩みません**（M4 で実測。未知 source の明るさの偏差 33.7 → 37.5）。
+- モデル側で緩めるなら**特徴抽出前**の pitch augmentation が要ります（**未実装**。SVC は特徴量が
+  事前計算済みなので online `pitch_aug` を使えず、学習側が明示的に SystemExit します）。
+- 話し声（非歌唱）入力は移調でも直りません（+12 半音でも −28.2%）。分布外です。
+
 ## 5. Rectified flow と mel
 
 condition と `x0` を使い、1-step で target mel を推定します。初期学習は flow loss と mel reconstruction loss を使い、安定後に optional GAN を検討します。

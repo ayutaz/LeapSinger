@@ -27,9 +27,11 @@ Phase 5  streaming student distillation
 
 **推奨:** 20〜50 人、合計 100〜300 時間を最初の本学習案とし、より小さい corpus で先に recipe を確定します。
 
-**確認済み（2026-08-30 実施）:** より小さい corpus として **23 話者 / 約 18 時間**（GTSinger 全 9 言語 20 歌手 + 日本語 3 DB、1 歌手あたり 0.75 時間）で recipe を確定しました。`balance_speakers: true` の speaker-balanced sampling で 30,000 step 完走し、未知 source（VocalSet）でも内容が崩壊しないことを確認しています。詳細は [実行計画](svc-plan.md) M3 の進捗節。
+**確認済み（2026-08-30 実施、2026-08-31 に 60,000 step へ延長）:** より小さい corpus として **23 話者 / 約 18 時間**（GTSinger 全 9 言語 20 歌手 + 日本語 3 DB、1 歌手あたり 0.75 時間）で recipe を確定しました。`balance_speakers: true` の speaker-balanced sampling で **60,000 step** 完走し、未知 source（VocalSet）でも内容が崩壊しないことを確認しています。詳細は [実行計画](svc-plan.md) M3 の進捗節。
 
-**確認済み（但し書き）: この base には高域不足が残っています。** 変換出力の spectral centroid は 「GT mel をボコーダーに通した再合成」に対して区間により **−4%〜−26%**。mel の bin 80 以上（約 3 kHz 超）が −0.15〜−0.19 ln-mel 不足しています。eval loss が 30,000 step でも下降中だったので**学習不足**の線と、`laplacian_var_ratio` 0.869 から**過平滑**の線があります。
+**確認済み: 出力が「暗い」のは学習不足でも過平滑でもなく、入力 F0 との結合です。** 当初は eval loss が下降中であることから**学習不足**、`laplacian_var_ratio` 0.869 から**過平滑**を疑いましたが、**どちらも 2026-08-31 の測り直しで否定されました**。content と loudness を固定して F0 だけを ±12 半音する交差実験で、男性 source の spectral centroid が 540 → **1196 Hz**、女性 source が 1067 → 378 Hz と動きます。**出力のスペクトル傾斜は条件づけた F0 に強く従う**ということです。
+
+含意が 2 つあります。**(1) 学習を続けても直りません**（60,000 step まで延ばして確認済み）。**(2) 男女をまたぐ変換では `--transpose` で source F0 を移調してから測ること。** 移調なしの数値は、モデルの品質ではなく source と target の音域差を測っています。モデル側で結合を緩めるなら**特徴抽出前**の pitch augmentation が要ります（**未実装**。SVC では online `pitch_aug` を使えません）。
 
 ```text
 Singer A WAV -> content/F0/loudness + speaker A -> mel A
@@ -56,6 +58,22 @@ GAN は baseline が安定し、artifact の比較が可能になった後に別
 5. train reconstruction だけが改善し、未知 source が悪化する場合は早期停止する。
 
 target singer だけでゼロから学習する PoC も可能ですが、SSL content 内の target timbre をそのまま利用する shortcut を学ぶ危険があります。そのため最終モデルでは base pretraining を推奨します。
+
+**確認済み（2026-08-31 実施、M4）: 上の 4 と 5 は「起こり得る失敗」ではなく、実際に起きます。**
+波音リツへ 20,000 step の fine-tune を行ったところ、**target の自己再構成と未知 source の内容保持が
+単調に逆へ動きました**（上限比 94.8% → 98.1% に対し、content cos 0.8599 → 0.8359）。
+
+したがって手順 3〜5 は次の形にします。
+
+- **選択規則を実験の前に config へ書く。** [`configs/svc_target_ft.yaml`](../configs/svc_target_ft.yaml)
+  の header に「未知 source の cos が base から 0.02 を超えて落ちた checkpoint は選ばない」と
+  書いてから走らせました。M4 ではこれが 15,000 step で発動しています。
+- **train loss は候補の絞り込みにしか使わない。** M4 では train / eval loss とも 20,000 step が
+  最小で、**それだけで選ぶと最悪の checkpoint を選びます**。
+- **save_interval を十分細かく取る。** 規則が発動した位置の手前に候補が無いと、選びようがありません
+  （M4 は 2,500 step ごと）。
+- **明るさは移調あり・なしの両方で記録する。** fine-tune では F0 依存の傾斜は直りませんでした
+  （未知 source の偏差 33.7 → 37.5）。
 
 ## 5. 既存 SVS checkpoint の warm-start
 

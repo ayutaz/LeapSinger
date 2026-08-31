@@ -54,6 +54,12 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
     uv run python -m train --config configs/svc_base.yaml \
       --data_dirs data/target --run_name svc_target --out_root log --device cuda
 
+    # target fine-tune（M4）。base を上書きしないよう run_name を必ず変える
+    uv run python -m train --config configs/svc_target_ft.yaml \
+      --data_dirs data/ritsu data/ritsu_normal data/ritsu_soft \
+      --init_from ckpt_060000.pt --finetune \
+      --run_name svc_ritsu_ft_01 --out_root log --device cuda
+
     # multi-singer base（M3）。spk_map と n_speakers は素材から生成した config に入る
     uv run python tools/m3_corpus.py --download --out data --write-config log/m3_base/config.yaml
     uv run python -m train --config log/m3_base/config.yaml --data_dirs data/<話者>... \
@@ -76,7 +82,7 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
 
 `run_smoke.py` は 3rd-party API・学習・自動再開・推論・ボコーダー・前処理・ONNX 書き出しまでを 1 コマンドで通し、終了コードが失敗ステージ数になります。**依存やバージョンを変えた後、環境を移した後、学習を始める前に必ず走らせること。** 入力は合成波形なので品質の検証にはならず、配線が壊れていないことだけを示します。
 
-単体テストは **197 件**（`test_svc_model` 25 / `test_svc_preprocess` 109 / `test_svc_dataset` 63）で、重いモデルもネットワークも使いません。`unittest discover` は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。上の 3 本を明示的に並べるか、`run_smoke.py` の `unittest` ステージを使ってください。後者は top-level の `test_*.py` を自動収集し、件数を表示します。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗します。
+単体テストは **211 件**（`test_svc_model` 33 / `test_svc_preprocess` 115 / `test_svc_dataset` 63）で、重いモデルもネットワークも使いません。`unittest discover` は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。上の 3 本を明示的に並べるか、`run_smoke.py` の `unittest` ステージを使ってください。後者は top-level の `test_*.py` を自動収集し、件数を表示します。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗します。
 
 ONNX / OpenUTAU 書き出し（SVS のみ。実験的）:
 
@@ -112,7 +118,9 @@ ONNX / OpenUTAU 書き出し（SVS のみ。実験的）:
 
 yaml は `mel` / `model` / `excitation` / `train` / `gan` / `data` の 6 セクションです。`mel` は `MelSpec`（`leapsinger/config.py`）として前処理・loader・励起 hop で共有され、常に一致している必要があります（44.1 kHz / hop 256 / n_fft 2048 / 128 mel / 40–16000 Hz、NHVSing V3 互換）。
 
-`configs/.gitignore` は top-level の `configs/*.yaml` を無視し、`3speaker_gan2d.yaml` / `3singer_ritsu3style_uv_gan2d.yaml` / `svc_base.yaml` / `svc_base_multi.yaml` の 4 つだけを公開対象にしています。新しい config を追加してもコミット対象にならない点に注意。
+`configs/.gitignore` は top-level の `configs/*.yaml` を無視し、`3speaker_gan2d.yaml` / `3singer_ritsu3style_uv_gan2d.yaml` / `svc_base.yaml` / `svc_base_multi.yaml` / `svc_target_ft.yaml` の 5 つだけを公開対象にしています。新しい config を追加してもコミット対象にならない点に注意。
+
+`svc_target_ft.yaml`（M4 の target fine-tune）は **header に checkpoint 選択規則を書いてから**走らせた config です。実験の後に規則を決めると train loss で選んでしまうので、この順序自体が成果物の一部です。
 
 ### SVC のデータ契約（厳格）
 
@@ -153,11 +161,15 @@ manifest には encoder の model revision と層、sample rate、hop、**SSL �
 | skill | `leapsinger-experiment` | 学習実験を事故なく回す手順（run 名、無視される設定、記録、主張の範囲） |
 | skill | `leapsinger-docs` | 確度ラベルと主張規則を保ったままドキュメントを更新する作法 |
 | skill | `vast-instance` | vast.ai インスタンスの検索・作成・回収・破棄、実運用で踏んだ落とし穴 |
-| hook | `tools/hooks/guard_commands.py` | `PreToolUse` で「常に間違い」なコマンドを実行前に止める（回帰テスト 45 件） |
+| hook | `tools/hooks/guard_commands.py` | `PreToolUse` で「常に間違い」なコマンドを実行前に止める（回帰テスト 51 件） |
 
 hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の staging、`git push --force`、`git reset --hard`、`log|data|checkpoints|.git` の `rm -rf`、`vastai` の直接叩き（料金確認を飛ばすため）、`unittest discover`、**手元での学習**（device によらず）、**既存 ckpt がある run へ `--init_from` を渡す**こと（`train.py` はこれを黙って無視して自動再開します）、**取得スクリプトの `-m` 実行**（`_gdrive` の兄弟 import が解決できず必ず失敗）、**`CUDA_VISIBLE_DEVICES=""`**（空文字は未設定扱いで CUDA が隠れない。`-1` が要る）、**角括弧で自己一致を外していない `pkill -f`**（このハーネスは `bash -c` で走るのでシェル自身に一致し、後続のコマンドごと落ちます）。
 
 止めすぎると自動運転が壊れるので、判断の余地がないものだけを対象にしています。どうしても必要なときはコマンド末尾に `# guard:allow` を付けると通ります。ルールを足したら `tools/hooks/test_guard.py` にケースも足してください。
+
+**誤検知が 1 つ分かっています。** guard はコマンド文字列を見るので、**ドキュメントの本文に `train.py` や学習コマンド例を書き込む**とき（heredoc で md を編集するなど）にも学習の起動と見なして止まります。この場合は `# guard:allow` を付けてください。
+
+**ヒアドキュメント経由ではバックスラッシュが 1 段外れます。** `<<'PY'` で quote していても、Python には `\\n` が `\n` として届きます。md のコードブロックに行継続の `\` を書くと**行が連結されて壊れます**（実際に起きました）。`chr(92)` で組み立てるか、書いた後に必ず読み返して確認すること。
 
 ## この開発での約束事
 

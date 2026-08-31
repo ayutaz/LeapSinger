@@ -1,6 +1,6 @@
 # SVC 調査の出典一覧
 
-調査日: 2026-08-30
+調査日: 2026-08-30（ローカル根拠は 2026-09-01 まで追記）
 
 ## 1. 証拠の扱い
 
@@ -25,11 +25,16 @@
 | [`configs/3speaker_gan2d.yaml`](../configs/3speaker_gan2d.yaml) | 既存 SVS batch/update/GAN 設定の比較 |
 | [`test_svc_model.py`](../test_svc_model.py) | targeted verification の範囲 |
 | [`preprocess/svc/`](../preprocess/svc/) | 整列・部分集合・loudness・検査・coverage・split・report の実装 |
-| [`test_svc_preprocess.py`](../test_svc_preprocess.py) / [`test_svc_dataset.py`](../test_svc_dataset.py) | 契約テスト（合計 185 件のうち 166 件） |
+| [`test_svc_preprocess.py`](../test_svc_preprocess.py) / [`test_svc_dataset.py`](../test_svc_dataset.py) | 契約テスト（合計 211 件のうち 178 件） |
 | [`configs/svc_base_multi.yaml`](../configs/svc_base_multi.yaml) / [`tools/m3_corpus.py`](../tools/m3_corpus.py) | M3 の recipe と素材の用意（話者ごとに 1 shard） |
 | [`tools/m2_verify.py`](../tools/m2_verify.py) / [`tools/m3_verify.py`](../tools/m3_verify.py) / [`tools/nhv_indist.py`](../tools/nhv_indist.py) | M2 / M3 / M0 ゴール 4 の測定と、その JSON 報告 |
 | [`tools/svc_convert.py`](../tools/svc_convert.py) / [`tools/audio_metrics.py`](../tools/audio_metrics.py) | 任意 WAV の変換 CLI と、帯域・spectral centroid の測定 |
 | `log/m3_base/{config.yaml,perf.json,events}` と `out/m3_*/m3_report.json` | M3 の実験記録（回収済み。スループット・peak VRAM・内容保持の一次データ） |
+| `.m0data/m4/m4_out/{commit.txt,config_used.yaml,perf.json,uv.lock,nvidia-smi.txt,train.log,events}` | M4 の実験記録（回収済み・sha256 照合済み）。**config の完全コピーと commit を含む** |
+| `.m0data/m4/m4_out/{verify_*,self_*}` | M4 の測定結果。未知 source 40 clip × 5 checkpoint と、target hold-out の自己再構成 |
+| `.m0data/m4/ckpt_{005000,010000,020000}.pt` | M4 の checkpoint。**採用は `ckpt_010000`**（選択規則は `configs/svc_target_ft.yaml` の header） |
+| [`configs/svc_target_ft.yaml`](../configs/svc_target_ft.yaml) | M4 の recipe と、実験前に書いた checkpoint 選択規則 |
+| [`tools/speaker_similarity.py`](../tools/speaker_similarity.py) | 話者類似度の枠組みと、**既定 encoder が歌声で較正を通らないことの記録**（module docstring に較正表） |
 | [`doc/svc-content-encoder.md`](svc-content-encoder.md) / [`doc/svc-dataset-ledger.md`](svc-dataset-ledger.md) | encoder 選定と M0 台帳 |
 | [`pyproject.toml`](../pyproject.toml) / [`uv.lock`](../uv.lock) / `.python-version` | Python 3.13 固定、CUDA wheel index、依存の解決結果 |
 | [`CLAUDE.md`](../CLAUDE.md) | コマンド、共有スタック、データ契約、既知の落とし穴 |

@@ -95,6 +95,11 @@ No.7 は対象外**で、発声スタイルの coverage は技法ラベルを持
 
 - held-out song と未知 source singer で変換できる。
 - target similarity、F0、明瞭度、ノイズの客観指標を記録する。
+- **target similarity については、使う speaker encoder が歌声で較正（上限・下限・重なり）を
+  通っていること。** 2026-08-31 時点で手元の x-vector 2 本は同性の歌手を分離できず、
+  **この項目は測定手段から未達**です（[評価計画](svc-evaluation.md) 4 節）。
+- **未知 source の内容保持が base から落ちていないこと。** M4 で、target の再現と未知 source の
+  保持が単調に逆へ動くことを実測しました（[実行計画](svc-plan.md) M4）。
 - Seed-VC と blind listening test を実施する。
 - failure sample を除外せず分類して残す。
 
