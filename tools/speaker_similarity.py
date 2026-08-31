@@ -20,23 +20,27 @@ content cos と同じく、必ず 2 つの基準と並べます。
 `transformers` の `WavLMForXVector` で、**新しい依存は増えません**（ContentVec で既に
 transformers を使っているため）。**重みのライセンスは未確認**です。
 
-**確認済み（2026-08-31）: 既定の `microsoft/wavlm-base-plus-sv` は歌声では使えません。**
-VocalSet 20 歌手 × 同一技法（arpeggios / straight）4 clip = 80 本で較正した結果:
+**確認済み（2026-08-31）: 手元で使える話者照合モデルは、同性の別歌手を分けられません。**
+VocalSet 20 歌手で 3 通り較正しました（`transformers` にある x-vector モデル 2 本）。
 
-| ペア | cos |
-|---|---|
-| 同一話者 | 0.7533 ± 0.1379 (n=120) |
-| 別話者・同性 | 0.6961 ± 0.1476 (n=1456) |
-| 別話者・異性 | 0.6813 ± 0.1323 (n=1584) |
+| 素材 / モデル | 同一話者 | 別話者・同性 | 別話者・異性 | 重なり |
+|---|---|---|---|---|
+| arpeggios・straight 4 本 / wavlm-base-plus-sv | 0.7533 ± 0.1379 | 0.6961 ± 0.1476 | 0.6813 ± 0.1323 | 88.3% |
+| 同上 / unispeech-sat-base-plus-sv | 0.7426 ± 0.1540 | 0.6970 ± 0.1522 | 0.6400 ± 0.1557 | 93.9% |
+| **excerpts・straight 3 曲 / wavlm-base-plus-sv** | **0.8307 ± 0.0832** | **0.7713 ± 0.1104** | **0.5199 ± 0.1296** | **83.3%** |
 
-同一話者の下位 5%（0.490）を**別話者・同性ペアの 88.3%** が超えます。差 0.057 に対して
-ばらつきが 0.14 あり、**同一話者と別話者を判別できていません**。話し声で学習された
-話者照合モデルを歌声にそのまま当てた結果です。
+「重なり」は、同一話者ペアの下位 5% を超える別話者・同性ペアの割合です。曲の抜粋
+（同一技法・別の曲）で測るのが最も公平で分離も良いのですが、それでも同性では差 0.059 に対し
+ばらつきが 0.08〜0.11 あり、**83% が重なります**。arpeggio は同じ音階を単母音で歌うため
+話者性の手がかりが乏しく、さらに悪くなります。
 
-**したがって、この既定 encoder の出力を target similarity として報告してはいけません。**
-上限・下限・回復率という枠組み自体は正しいので、**歌声で較正を通る encoder に差し替えて**
-から使ってください。差し替えたら必ずこの較正（同一話者 / 別話者・同性 / 別話者・異性）を
-やり直し、分離が出ることを確かめること。
+**使ってよい範囲:** 異性間（0.5199 対 0.8307）は明確に分かれるので、**source と target の
+性別が違う場合の粗い確認にだけ**使えます。**同性間の target similarity は、この encoder では
+主張できません。** 歌声で較正を通る encoder（ECAPA-TDNN 等が候補。依存の追加が要る）に
+差し替えるまで、M4 ゴール 2 の similarity は「未測定」のままにします。
+
+**差し替えたら必ずこの較正をやり直すこと**（同一話者 / 別話者・同性 / 別話者・異性の 3 群で、
+重なりが十分小さいこと）。**重みのライセンスは未確認**です。
 """
 from __future__ import annotations
 
@@ -99,15 +103,20 @@ def similarity_report(converted: Sequence[np.ndarray], target_refs: Sequence[np.
 
 
 class XVectorEncoder:
-    """WavLM の x-vector。16 kHz の 1 本の波形 -> 埋め込み [D]。"""
+    """x-vector 話者埋め込み。16 kHz の 1 本の波形 -> 埋め込み [D]。
+
+    `AutoModelForAudioXVector` なので `--model` でモデルを差し替えられます。**差し替えたら
+    必ず較正をやり直すこと**（module の docstring）。
+    """
 
     def __init__(self, model_id: str = "microsoft/wavlm-base-plus-sv",
                  device: str = "cpu", revision: str | None = None):
         import torch
-        from transformers import AutoFeatureExtractor, WavLMForXVector
+        from transformers import AutoFeatureExtractor, AutoModelForAudioXVector
         self.model_id, self.device, self.revision = model_id, device, revision
         self.fe = AutoFeatureExtractor.from_pretrained(model_id, revision=revision)
-        self.model = WavLMForXVector.from_pretrained(model_id, revision=revision).to(device).eval()
+        self.model = (AutoModelForAudioXVector
+                      .from_pretrained(model_id, revision=revision).to(device).eval())
         self._torch = torch
 
     def __call__(self, wav: np.ndarray, sr: int) -> np.ndarray:
