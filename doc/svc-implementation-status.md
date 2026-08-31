@@ -33,7 +33,8 @@
 | [`tools/m3_verify.py`](../tools/m3_verify.py) | 追加済み | M3 ゴール 3。未知 source の内容保持を content cos で測る（上限・下限つき）＋ 音の明るさ |
 | [`tools/svc_convert.py`](../tools/svc_convert.py) | 追加済み | 任意の WAV を学習済みモデルで変換する CLI。`--self-check` でボコーダー由来の劣化を分離、`--match-loudness` で入力を学習分布へ寄せる |
 | [`tools/audio_metrics.py`](../tools/audio_metrics.py) | 追加済み | 帯域エネルギー比と spectral centroid。**内容指標が検知しない高域の欠落**を測る |
-| [`tools/speaker_similarity.py`](../tools/speaker_similarity.py) | 追加済み（**使えない**） | M4 ゴール 2 の話者類似度。上限・下限・回復率の枠組みはあるが、**既定 encoder が歌声の同性ペアで較正を通らない** |
+| [`tools/speaker_similarity.py`](../tools/speaker_similarity.py) | 実装済み | M4 ゴール 2 の話者類似度。上限・下限・回復率。**既定は ECAPA-TDNN**、12 秒未満のクリップは拒否する |
+| [`tools/speaker_calibrate.py`](../tools/speaker_calibrate.py) | 追加済み | 話者照合 encoder が**歌声で使えるか**を 3 群の重なりで判定。**合格条件は事前登録**（`MAX_OVERLAP = 0.20`） |
 | [`configs/svc_target_ft.yaml`](../configs/svc_target_ft.yaml) | 追加済み | M4 の recipe。**checkpoint 選択規則を header に明記**（train loss だけで選ばない） |
 | [`configs/svc_base_multi.yaml`](../configs/svc_base_multi.yaml) | 追加済み | M3 の recipe。`spk_map` / `n_speakers` は素材から生成 |
 | [`test_svc_preprocess_integration.py`](../test_svc_preprocess_integration.py) | 追加済み | 実モデルを使う統合テスト（既定 skip） |
@@ -160,7 +161,7 @@ Python 3.13 / torch 2.13 / librosa 1.0 へ更新した後、次を上記環境�
 
 ### 確認済み
 
-- 自動テスト **211 件**が成功（`test_svc_model` 33 / `test_svc_preprocess` 115 / `test_svc_dataset` 63）。重いモデルもネットワークも使いません。実モデルの統合テストは 4 件で、`LEAPSINGER_INTEGRATION=1` のときだけ走ります。
+- 自動テスト **234 件**が成功（`test_svc_model` 56 / `test_svc_preprocess` 115 / `test_svc_dataset` 63）。重いモデルもネットワークも使いません。実モデルの統合テストは 4 件で、`LEAPSINGER_INTEGRATION=1` のときだけ走ります。
 - コマンド guard の回帰テスト **51 件**（`tools/hooks/test_guard.py`）。止めすぎ検出のため、通ってほしいケースも同数以上入れています。
 - **実音声 5 コーパスへの検査・coverage・split**（M0。下記「M0 の実データ検証」）。
 - padding された frame が有効 frame に影響しないこと。
@@ -327,8 +328,18 @@ RTX 3090、`configs/svc_target_ft.yaml`、`--init_from ... --finetune`。base �
 **確認済み: fine-tune では F0 依存の傾斜は直りません。** 未知 source の明るさの偏差は
 33.7 → 37.5 と悪化し、+12 半音の条件でも base 30.0 対 ft 30.8 でした。
 
-**未測定: ゴール 2 の話者類似度。** ここでの target 側の数値は**自己再構成**であり、
-「別人の声が target に聞こえるか」ではありません（下記「未検証」）。
+**確認済み（2026-09-01）: ゴール 2 の話者類似度も測りました。** 話者照合 encoder を
+ECAPA-TDNN に替え、12 秒以上のクリップで較正を通してから測定しています。
+
+| checkpoint | 変換 対 target | 回復率（上限 0.7202 / 下限 0.2862） |
+|---|---:|---:|
+| base（60,000） | 0.4819 | 45.1% |
+| **ft 10,000（採用）** | 0.5244 | **54.9%** |
+| ft 20,000 | 0.5380 | 58.0% |
+
+**内容保持が落ちるのと逆向きに、話者類似度は上がります。** 未知 source 6 clip（VocalSet、
+各 20 秒、男性は +12 半音）を波音リツへ変換した結果です。**1 群 3 clip と少ないので順序だけを
+読み、幅を読まないこと。** 詳細と限界は [実行計画](svc-plan.md) M4 の進捗節。
 
 ### 制限付き
 
@@ -341,17 +352,17 @@ top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` / `
 ### 未検証
 
 - **音質**（内容保持・F0 追従・V/UV に加えて音の明るさも測るようになったが、それでも音質ではない）。
-- **話者類似度の測定手段。** M4 ゴール 2 の半分が測れていない（[`tools/speaker_similarity.py`](../tools/speaker_similarity.py)
-  の枠組みはあるが、encoder が歌声で較正を通らない）。**未実装**。
+- ~~話者類似度の測定手段~~ — **解決（2026-09-01）。** ECAPA-TDNN・12 秒以上で較正通過
+  （[`tools/speaker_calibrate.py`](../tools/speaker_calibrate.py) で再実行できる）。
 - **入力の F0 に対する出力傾斜の結合を緩めること。** 2026-08-31 に 40 clip で測り直し、
   高域不足は学習不足ではなく **F0 条件への強い結合**だと分かった（男性 source を +12 半音
   すると 540 → 1196 Hz）。**変換時の移調（`--transpose`）で実用上は回避できる**が、
   モデル側で緩めるには特徴抽出前の pitch augmentation が要る（**未実装**）。
 - **話し声（非歌唱）入力への対応**。学習素材が歌唱のみのため分布外で、移調では直らない
   （+12 にしても −28.2%）。**未実装**。
-- **target timbre が「別人の声を target に寄せられているか」。** M4 で測ったのは target 自身の
-  **自己再構成**（上限比 94.8% → 98.1%）であって、話者変換の成否ではありません。上の
-  「話者類似度の測定手段」が無いため、**M4 ゴール 2 の半分は未達のまま**です。
+- **CER（明瞭度）・信号品質・timing・推論 RTF。** M5 ゴール 2 が要求しますが**道具がありません**
+  （[評価計画](svc-evaluation.md) 4 節「M5 に入る前の棚卸し」）。`content_cos` は明瞭度の
+  代理であって CER ではありません。
 - 256 次元部分集合の seed 比較の**反復**（1 度は実施済み。各 1 run では部分集合の差と run のばらつきを分離できない）。**M4 まで反復せずに進みました。**
 - SVS checkpoint の安全な部分 warm-start。
 - Seed-VC との客観・主観比較。
@@ -367,11 +378,12 @@ top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` / `
 2. ~~実 audio での preprocessing smoke~~ — **完了**（M1、波音リツ実音声）。
 3. ~~1〜数 phrase overfit と WAV 出力~~ — **完了**（M2）。
 4. ~~multi-singer base~~ — **完了**（M3）。
-5. ~~target fine-tune~~ — **実施済み**（M4）。ただし**話者類似度が未測定**なので、ゴール 2 は半分だけです。
-6. **歌声で較正を通る話者照合 encoder への差し替え**（M4 ゴール 2 の残り。**依存の追加が要る**ため要ユーザー判断）。
-7. SVS -> SVC shared-weight warm-start loader と load-report tests（条件付きトラック A。M3 のコストが問題になった場合のみ）。
-8. Seed-VC comparison suite と blind review artifact（M5）。
-9. offline gate 後に streaming student（M6）。
+5. ~~target fine-tune~~ — **完了**（M4）。話者類似度まで測定済み。
+6. ~~歌声で較正を通る話者照合 encoder への差し替え~~ — **完了**（ECAPA-TDNN、`eval` extra）。
+7. **M5 の指標のうち道具が無いもの**（CER / 信号品質 / timing / 推論 RTF）を作る。
+8. SVS -> SVC shared-weight warm-start loader と load-report tests（条件付きトラック A。M3 のコストが問題になった場合のみ）。
+9. Seed-VC comparison suite と blind review artifact（M5）。
+10. offline gate 後に streaming student（M6）。
 
 ## 7. ブランチと作業ツリー
 

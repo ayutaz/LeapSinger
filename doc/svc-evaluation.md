@@ -41,7 +41,7 @@ target singer の train 曲、同一 take、近重複 clip は test から除外
 | 観点 | 候補指標 | 注意 |
 |---|---|---|
 | pitch 保持 | F0 correlation、F0 RMSE、V/UV error | extractor 自身の誤りを別途監査する |
-| target similarity | speaker embedding cosine / SECS | **手元の x-vector encoder 2 本は歌声で較正を通らない**（下記）。encoder を先に検証すること |
+| target similarity | speaker embedding cosine / SECS | **ECAPA-TDNN を 12 秒以上のクリップで使う**（下記の較正表）。encoder と長さの**両方**が要る |
 | intelligibility | CER / phoneme error | 日本語歌唱 ASR の bias を明記する |
 | signal quality | SIG / BAK / OVRL、DNSMOS 系 | music/singing への妥当性を過信しない |
 | spectral | mel/STFT distance、MCD | parallel reference がある subset に限定 |
@@ -52,22 +52,29 @@ target singer の train 曲、同一 take、近重複 clip は test から除外
 
 一つの総合点へ早期に集約せず、pitch・内容・target similarity・artifact・latency を別軸で報告します。
 
-**確認済み（2026-08-31、M4）: 話者類似度は「まだ測れていない」が正確です。** 枠組みは
-[`tools/speaker_similarity.py`](../tools/speaker_similarity.py) にあり、**上限**（target の別クリップ
-どうし）・**下限**（無関係な話者）・回復率という、内容保持と同じ読み方をします。しかし
-`transformers` の x-vector モデル 2 本を素材を変えて 3 通り較正したところ、最も公平な条件
-（同一技法・別の曲の抜粋）でも**同性間で分離できませんでした**。
+**確認済み（2026-09-01）: 話者類似度は測れるようになりました。encoder とクリップ長の両方が要ります。**
+枠組みは [`tools/speaker_similarity.py`](../tools/speaker_similarity.py)、較正は
+[`tools/speaker_calibrate.py`](../tools/speaker_calibrate.py) で**再実行できます**（VocalSet
+20 歌手・excerpts/straight・各 3 本）。**上限**（target の別クリップどうし）・**下限**
+（無関係な話者）・回復率という、内容保持と同じ読み方をします。
 
-| 素材 / モデル | 同一話者 | 別話者・同性 | 別話者・異性 | 重なり |
-|---|---|---|---|---|
-| arpeggios 4 本 / wavlm-base-plus-sv | 0.7533 | 0.6961 | 0.6813 | 88.3% |
-| 同上 / unispeech-sat-base-plus-sv | 0.7426 | 0.6970 | 0.6400 | 93.9% |
-| **excerpts 3 曲 / wavlm-base-plus-sv** | **0.8307** | **0.7713** | **0.5199** | **83.3%** |
+**合格条件は走らせる前に決めました:** 重なり（同一話者ペアの下位 5% を超える別話者・同性
+ペアの割合）が **20% 以下**。
 
-**決定: 同性間の target similarity は、歌声で較正を通る encoder に差し替えるまで報告しません。**
-異性間（0.5199 対 0.8307）は分かれるので、粗い確認にのみ使えます。**較正を通していない
-encoder の cosine を「話者類似度」として出さないこと。** この表が無ければ、0.77 という数値は
-一見それらしく見えます。
+| encoder | クリップ長 | 同一話者 | 別話者・同性 | 別話者・異性 | 重なり | 判定 |
+|---|---:|---|---|---|---:|:--:|
+| wavlm-base-plus-sv | 6 s | 0.8307 ± 0.0832 | 0.7713 ± 0.1104 | 0.5199 ± 0.1296 | 83.3% | 不合格 |
+| wavlm-base-plus-sv | 12 s | 0.8856 ± 0.0670 | 0.8196 ± 0.0943 | 0.5314 ± 0.1323 | 77.0% | 不合格 |
+| ECAPA-TDNN | 6 s | 0.5415 ± 0.1331 | 0.3452 ± 0.1325 | 0.1816 ± 0.0976 | 56.9% | 不合格 |
+| **ECAPA-TDNN** | **12 s** | 0.6632 ± 0.0995 | 0.3891 ± 0.1369 | 0.1966 ± 0.1013 | **19.8%** | **合格** |
+| **ECAPA-TDNN** | **20 s** | 0.7096 ± 0.1037 | 0.4040 ± 0.1386 | 0.2109 ± 0.1096 | **17.3%** | **合格** |
+
+**どちらか一方では足りません。** x-vector は 12 秒にしても 77.0% で不合格、ECAPA も 6 秒では
+56.9% で不合格です。**2026-08-31 に「測れない」と結論したのは、6 秒で切って測っていたことが
+原因の半分でした。** クリップ長は encoder の選択と同じ重みを持つ設計パラメータとして扱います。
+
+**決定: 較正表を示さずに cosine を「話者類似度」として出さないこと。** また
+`similarity_report` は 12 秒未満のクリップを**拒否**します（較正の外だから）。
 
 **確認済み（2026-08-31、M4）: 明るさを符号つき平均で評価しないこと。** 上限より明るい clip と
 暗い clip が打ち消し合い、**平均は良く見えるのに実際は両方向へ外れている**ことが起きます
@@ -77,6 +84,27 @@ encoder の cosine を「話者類似度」として出さないこと。** こ�
 +12 半音で 1196 Hz）。
 
 **確認済み（2026-08-30、M3）: 内容指標は音の劣化を検知しません。** 推論条件の不具合で spectral centroid が 620 → 368 Hz へ落ちたとき、content cos は 0.8217 → 0.8096 としか動かず、F0 相関も V/UV もほぼ無反応でした。**耳で「こもっている」と分かる差です。** 内容・音高の指標が揃って良いことを音質の根拠にしないでください。
+
+### M5 に入る前の棚卸し（2026-09-01）
+
+**確認済み:** [実行計画](svc-plan.md) M5 ゴール 2 が挙げる指標のうち、**道具があるのは半分**です。
+M5 は「測る」工程なので、無い指標は M5 の中で作ることになります。**先に把握しておくための表**です。
+
+| M5 が要求する指標 | 道具 | 状態 |
+|---|---|---|
+| F0 correlation / RMSE | [`m3_verify.py`](../tools/m3_verify.py)（`f0_corr` / `median_semitones`） | **ある** |
+| V/UV error | 同上（`uv_agree`） | **ある** |
+| 内容保持（明瞭度の代理） | 同上（`content_cos` を上限・下限つきで） | **ある** |
+| 音の明るさ・帯域 | [`audio_metrics.py`](../tools/audio_metrics.py) + 上限（GT mel 再合成） | **ある** |
+| speaker similarity | [`speaker_similarity.py`](../tools/speaker_similarity.py) + [較正](../tools/speaker_calibrate.py) | **ある**（2026-09-01 に較正通過） |
+| **CER / 音素誤り** | — | **無い。** 日本語歌唱 ASR が要る（依存の追加。bias の明記も要る） |
+| **信号品質（DNSMOS 系）** | — | **無い。** 歌声への妥当性そのものが要検討 |
+| **timing（onset/offset ずれ）** | — | **無い** |
+| **RTF / peak VRAM（推論時）** | — | **無い。** 学習側の peak VRAM は測ってあるが、推論の RTF は未測定 |
+
+**注意:** `content_cos` は明瞭度の代理であって CER ではありません。M3 で、耳で分かる劣化
+（centroid 620 → 368 Hz）に対して content cos は 0.8217 → 0.8096 としか動きませんでした。
+**内容指標が揃って良いことを「明瞭度が保たれた」の根拠にしないこと。**
 
 ## 5. 主観評価
 

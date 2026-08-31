@@ -20,6 +20,7 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
 環境構築:
 
     uv sync --extra train --extra export --extra dev   # 依存を .venv へ（推論のみなら uv sync）
+    uv sync --extra eval                       # 話者類似度の評価に使う ECAPA-TDNN（speechbrain）
     uv add <package>                           # 依存を足すときは常に uv add（pyproject にも記録される）
     uv add --optional train <package>          # extra に足すとき（train / export）
 
@@ -77,12 +78,18 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
     uv run python -m unittest test_svc_dataset -v     # M0 の素材検査・split・音域集計
     LEAPSINGER_INTEGRATION=1 uv run python -m unittest test_svc_preprocess_integration -v  # 実モデル（既定は skip）
     uv run python -m unittest test_svc_model.HarmonicSVCModelTests.test_forward_and_infer_reuse_flow_with_svc_conditioning
-    uv run python tools/hooks/test_guard.py    # コマンド guard の回帰テスト
+    uv run python tools/hooks/test_guard.py    # コマンド guard の回帰テスト（51 件）
+
+    # 話者類似度。**encoder を替えたら必ず較正からやり直すこと**
+    uv run python tools/speaker_calibrate.py --root .m0data/vocalset_calib \
+      --encoder ecapa --glob "excerpts/straight/*.wav" --seconds 20 --device cpu
+    uv run python tools/speaker_similarity.py --converted out/<変換結果> \
+      --target download/ritsu --unrelated .m0data/unrelated_ref --seconds 20 --device cpu
     uv run ruff check .                        # lint（`--fix` で自動修正）
 
 `run_smoke.py` は 3rd-party API・学習・自動再開・推論・ボコーダー・前処理・ONNX 書き出しまでを 1 コマンドで通し、終了コードが失敗ステージ数になります。**依存やバージョンを変えた後、環境を移した後、学習を始める前に必ず走らせること。** 入力は合成波形なので品質の検証にはならず、配線が壊れていないことだけを示します。
 
-単体テストは **211 件**（`test_svc_model` 33 / `test_svc_preprocess` 115 / `test_svc_dataset` 63）で、重いモデルもネットワークも使いません。`unittest discover` は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。上の 3 本を明示的に並べるか、`run_smoke.py` の `unittest` ステージを使ってください。後者は top-level の `test_*.py` を自動収集し、件数を表示します。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗します。
+単体テストは **234 件**（`test_svc_model` 56 / `test_svc_preprocess` 115 / `test_svc_dataset` 63）で、重いモデルもネットワークも使いません。`unittest discover` は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。上の 3 本を明示的に並べるか、`run_smoke.py` の `unittest` ステージを使ってください。後者は top-level の `test_*.py` を自動収集し、件数を表示します。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗します。
 
 ONNX / OpenUTAU 書き出し（SVS のみ。実験的）:
 
@@ -183,9 +190,11 @@ hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の 
 - 「世界初」「唯一」は使わない（rectified-flow SVC も harmonic modelling も先行研究がある）。
 - 「1-step」は acoustic flow の step 数であり、pipeline 全体の話ではない。
 
-現在の到達点は**完了レベル 3（実データ）**です。実音声から shard を作り、23 話者・約 18 時間の multi-singer base を **60,000 step** 学習し、そこから波音リツへ **20,000 step の fine-tune** まで実施しました（M0〜M4）。**話者類似度の評価、Seed-VC 比較、streaming student は未到達**です（`doc/svc-implementation-status.md` の検証済み / 未検証の境界を参照）。
+現在の到達点は**完了レベル 3（実データ）**です。実音声から shard を作り、23 話者・約 18 時間の multi-singer base を **60,000 step** 学習し、そこから波音リツへ **20,000 step の fine-tune** まで実施しました（M0〜M4 完了）。**Seed-VC 比較（M5）、streaming student（M6）は未着手**です（`doc/svc-implementation-status.md` の検証済み / 未検証の境界を参照）。
 
-**M4 で分かった trade-off（実測）:** fine-tune を進めるほど target の自己再構成は上限へ近づき（上限比 94.8% → 98.1%）、**未知 source の内容保持は単調に落ちます**（cos 0.8599 → 0.8359）。config に事前登録した規則（未知 source の cos が base から 0.02 を超えて落ちた checkpoint は選ばない）で **`ckpt_010000` を選択**しました。train loss だけで選ぶと 20,000 step を選んでしまいます。
+**M4 で分かった trade-off（実測）:** fine-tune を進めるほど **target らしさは上がり**（話者類似度の回復率 45.1% → 58.0%、自己再構成は上限比 94.8% → 98.1%）、**未知 source の内容保持は単調に落ちます**（cos 0.8599 → 0.8359）。config に事前登録した規則（未知 source の cos が base から 0.02 を超えて落ちた checkpoint は選ばない）で **`ckpt_010000` を選択**しました。train loss だけで選ぶと 20,000 step を選んでしまいます。
+
+**話者類似度は encoder とクリップ長の両方に依存します（実測）。** `transformers` の x-vector は歌声の同性ペアを分離できず（重なり 83.3%、12 秒にしても 77.0%）、**ECAPA-TDNN を 12 秒以上**で使って初めて事前登録した合格条件（20% 以下）を満たします（19.8%、20 秒で 17.3%）。`tools/speaker_similarity.py` は **12 秒未満のクリップを拒否**します。一度「測れない」と結論しましたが、原因の半分は 6 秒に切って測っていたことでした。**encoder を替えたら `tools/speaker_calibrate.py` で必ず較正をやり直すこと。**
 
 ## 既知の落とし穴
 

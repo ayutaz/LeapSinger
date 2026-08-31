@@ -1,6 +1,8 @@
 import json
+import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 import numpy as np
@@ -358,15 +360,63 @@ class SpeakerSimilarityTests(unittest.TestCase):
 
     SR = 16000
 
-    def _wavs(self, n, seed=0):
+    def _wavs(self, n, seed=0, seconds=12.0):
+        # 較正が成り立つ長さ（12 秒以上）で作る。短いと report が拒否する。
         r = np.random.default_rng(seed)
-        return [r.standard_normal(self.SR // 4).astype(np.float32) for _ in range(n)]
+        return [r.standard_normal(int(self.SR * seconds)).astype(np.float32) for _ in range(n)]
 
     def _embed_from(self, table):
         """wav の先頭サンプルを key にして、決められた埋め込みを返す偽 encoder。"""
         def embed(wav, sr):
             return np.asarray(table[float(wav[0])], dtype=np.float32)
         return embed
+
+    def test_report_records_the_clip_lengths_it_used(self):
+        # 較正は長さに依存する（6 秒では通らない）。あとから報告を読む人が、
+        # その数値が較正の内側で出たのかを判断できなければならない。
+        from tools.speaker_similarity import similarity_report
+        refs, conv = self._wavs(2, seed=1, seconds=15.0), self._wavs(1, seed=2, seconds=13.0)
+        table = {float(w[0]): [1.0, 0.0] for w in refs + conv}
+        rep = similarity_report(conv, refs, embed=self._embed_from(table), sr=self.SR)
+        self.assertEqual(rep["clip_seconds"]["min"], 13.0)
+        self.assertEqual(rep["clip_seconds"]["min_required"], 12.0)
+
+    def test_report_refuses_clips_shorter_than_the_calibrated_length(self):
+        # 較正（tools/speaker_calibrate.py）は 6 秒では通らず 12 秒で通った。
+        # 較正が成り立たない長さで数値を出すと、読めない値を報告することになる。
+        from tools.speaker_similarity import similarity_report
+        refs = self._wavs(2, seed=1)
+        short = self._wavs(1, seed=2, seconds=6.0)
+        table = {float(w[0]): [1.0, 0.0] for w in refs + short}
+        with self.assertRaises(ValueError):
+            similarity_report(short, refs, embed=self._embed_from(table), sr=self.SR)
+
+    def test_report_refuses_a_short_target_reference_too(self):
+        from tools.speaker_similarity import similarity_report
+        refs = self._wavs(2, seed=1, seconds=6.0)
+        conv = self._wavs(1, seed=2)
+        table = {float(w[0]): [1.0, 0.0] for w in refs + conv}
+        with self.assertRaises(ValueError):
+            similarity_report(conv, refs, embed=self._embed_from(table), sr=self.SR)
+
+    def test_the_length_error_names_the_calibrated_minimum(self):
+        from tools.speaker_similarity import MIN_SECONDS, similarity_report
+        refs = self._wavs(2, seed=1)
+        short = self._wavs(1, seed=2, seconds=3.0)
+        table = {float(w[0]): [1.0, 0.0] for w in refs + short}
+        with self.assertRaises(ValueError) as cm:
+            similarity_report(short, refs, embed=self._embed_from(table), sr=self.SR)
+        self.assertIn(str(MIN_SECONDS), str(cm.exception))
+
+    def test_the_length_guard_can_be_lifted_explicitly(self):
+        # 較正外だと分かったうえで測る場合は、明示的に外させる（黙って通さない）。
+        from tools.speaker_similarity import similarity_report
+        refs = self._wavs(2, seed=1, seconds=1.0)
+        conv = self._wavs(1, seed=2, seconds=1.0)
+        table = {float(w[0]): [1.0, 0.0] for w in refs + conv}
+        rep = similarity_report(conv, refs, embed=self._embed_from(table), sr=self.SR,
+                                min_seconds=0.0)
+        self.assertEqual(rep["converted_vs_target"]["n"], 2)
 
     def test_cosine_of_identical_vectors_is_one(self):
         from tools.speaker_similarity import cosine
@@ -433,3 +483,218 @@ class SpeakerSimilarityTests(unittest.TestCase):
             return base(wav, sr)
         similarity_report(conv, refs, other, embed=counting, sr=self.SR)
         self.assertEqual(len(calls), 7)
+
+
+class SpeakerCalibrationTests(unittest.TestCase):
+    """話者照合 encoder が「歌声で使えるか」を判定する較正（M4 ゴール 2 / M5 ゴール 2）。
+
+    **cos の絶対値ではなく、3 群の分離で判定します。** 同一話者ペアが高く、別話者ペアが
+    低いだけでは足りません。**分布が重なっていれば、個々の数値を読めません。**
+
+    - **同一話者**（別クリップどうし）— 上限の分布
+    - **別話者・同性** — ここと重なると target similarity を主張できない
+    - **別話者・異性** — 最も分かれやすい。ここだけで判定しない
+
+    判定は「重なり」（同一話者ペアの下位 5% を超える別話者・同性ペアの割合）で行います。
+    **閾値は encoder を走らせる前に決めます**（M4 の checkpoint 選択規則と同じ理由）。
+
+    埋め込みは引数で受け取るので、このテストは重いモデルもネットワークも使いません。
+    """
+
+    def test_gender_is_read_from_the_vocalset_directory_name(self):
+        from tools.speaker_calibrate import gender_of
+        self.assertEqual(gender_of("female1"), "female")
+        self.assertEqual(gender_of("male10"), "male")
+
+    def test_unknown_speaker_naming_is_rejected_rather_than_guessed(self):
+        # 性別を取り違えると「異性は分かれる」という結論ごと壊れる。黙って推測しない。
+        from tools.speaker_calibrate import gender_of
+        with self.assertRaises(ValueError):
+            gender_of("singer07")
+
+    def test_pairs_are_split_into_the_three_groups(self):
+        from tools.speaker_calibrate import pair_groups
+        speakers = ["female1", "female1", "female2", "male1"]
+        g = pair_groups(speakers)
+        self.assertEqual(g["same"], [(0, 1)])
+        self.assertEqual(g["diff_same_gender"], [(0, 2), (1, 2)])
+        self.assertEqual(sorted(g["diff_cross_gender"]), [(0, 3), (1, 3), (2, 3)])
+
+    def test_a_clip_is_never_paired_with_itself(self):
+        # 自己ペアを混ぜると同一話者群が 1.0 に張り付き、上限が上振れする。
+        from tools.speaker_calibrate import pair_groups
+        for pairs in pair_groups(["female1", "female1", "male1"]).values():
+            for i, j in pairs:
+                self.assertNotEqual(i, j)
+
+    def test_overlap_is_zero_when_different_speakers_all_fall_below(self):
+        from tools.speaker_calibrate import overlap_fraction
+        same = [0.90, 0.91, 0.92, 0.93, 0.94]
+        self.assertEqual(overlap_fraction(same, [0.10, 0.20, 0.30]), 0.0)
+
+    def test_overlap_is_one_when_every_different_speaker_pair_exceeds(self):
+        from tools.speaker_calibrate import overlap_fraction
+        same = [0.50, 0.51, 0.52, 0.53, 0.54]
+        self.assertEqual(overlap_fraction(same, [0.80, 0.90]), 1.0)
+
+    def test_overlap_is_measured_against_the_fifth_percentile_of_same_speaker(self):
+        # 平均どうしを比べると、ばらつきの大きい encoder を通してしまう。
+        from tools.speaker_calibrate import overlap_fraction
+        same = list(np.linspace(0.0, 1.0, 101))          # 5 パーセンタイル = 0.05
+        self.assertAlmostEqual(overlap_fraction(same, [0.04, 0.06, 0.07, 0.08]), 0.75, places=6)
+
+    def test_report_returns_all_three_groups_with_spread(self):
+        from tools.speaker_calibrate import calibration_report
+        embs = [np.array([1.0, 0.0]), np.array([1.0, 0.0]),
+                np.array([0.0, 1.0]), np.array([0.0, 1.0])]
+        rep = calibration_report(embs, ["female1", "female1", "female2", "male1"])
+        for key in ("same", "diff_same_gender", "diff_cross_gender"):
+            self.assertIn("mean", rep[key])
+            self.assertIn("sd", rep[key])
+            self.assertGreater(rep[key]["n"], 0)
+
+    def test_report_refuses_when_there_is_no_same_speaker_pair(self):
+        # 上限が作れないのに数値だけ返すと、読めない報告になる。
+        from tools.speaker_calibrate import calibration_report
+        embs = [np.array([1.0, 0.0]), np.array([0.0, 1.0])]
+        with self.assertRaises(ValueError):
+            calibration_report(embs, ["female1", "female2"])
+
+    def test_report_refuses_when_no_same_gender_pair_exists(self):
+        # 同性ペアが無いと、この encoder の一番きつい条件を測っていない。
+        from tools.speaker_calibrate import calibration_report
+        embs = [np.array([1.0, 0.0]), np.array([1.0, 0.0]), np.array([0.0, 1.0])]
+        with self.assertRaises(ValueError):
+            calibration_report(embs, ["female1", "female1", "male1"])
+
+    def test_a_perfectly_separating_encoder_passes(self):
+        from tools.speaker_calibrate import calibration_report, passes_calibration
+        embs = [np.array([1.0, 0.0]), np.array([1.0, 0.01]),
+                np.array([0.0, 1.0]), np.array([0.01, 1.0]),
+                np.array([1.0, 1.0]), np.array([1.0, 1.01])]
+        rep = calibration_report(embs, ["female1", "female1", "female2", "female2",
+                                        "male1", "male1"])
+        self.assertTrue(passes_calibration(rep, max_overlap=0.20))
+
+    def test_an_encoder_that_cannot_separate_same_gender_singers_fails(self):
+        # 2026-08-31 に実測した wavlm/unispeech の形（重なり 83%）を再現する。
+        from tools.speaker_calibrate import calibration_report, passes_calibration
+        rng = np.random.default_rng(0)
+        embs = [rng.standard_normal(8) * 0.02 + np.array([1.0] + [0.0] * 7) for _ in range(8)]
+        rep = calibration_report(embs, ["female1"] * 2 + ["female2"] * 2
+                                 + ["female3"] * 2 + ["male1"] * 2)
+        self.assertFalse(passes_calibration(rep, max_overlap=0.20))
+
+    def test_collect_takes_the_same_number_of_clips_from_every_speaker(self):
+        # 本数が偏ると、多く入った話者が群の平均を支配する。
+        import soundfile as sf
+
+        from tools.speaker_calibrate import _collect
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for spk, n in (("female1", 5), ("female2", 3)):
+                (root / spk).mkdir()
+                for i in range(n):
+                    sf.write(root / spk / f"{i}.wav", np.zeros(16000, np.float32), 16000)
+            _, speakers = _collect(root, clips_per_speaker=2, seconds=0.5, sr=16000)
+            self.assertEqual(speakers.count("female1"), 2)
+            self.assertEqual(speakers.count("female2"), 2)
+
+    def test_collect_skips_a_speaker_that_cannot_form_a_same_speaker_pair(self):
+        import soundfile as sf
+
+        from tools.speaker_calibrate import _collect
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "female1").mkdir()
+            sf.write(root / "female1" / "a.wav", np.zeros(16000, np.float32), 16000)
+            (root / "female2").mkdir()
+            for i in range(2):
+                sf.write(root / "female2" / f"{i}.wav", np.zeros(16000, np.float32), 16000)
+            _, speakers = _collect(root, clips_per_speaker=3, seconds=0.5, sr=16000)
+            self.assertNotIn("female1", speakers)
+            self.assertEqual(speakers.count("female2"), 2)
+
+    def test_collect_restricts_the_material_with_a_glob(self):
+        # 「どのクリップで較正したか」は結論そのもの。歌唱と朗読を混ぜると別の実験になる。
+        import soundfile as sf
+
+        from tools.speaker_calibrate import _collect
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for sub in ("excerpts/straight", "arpeggios"):
+                (root / "female1" / sub).mkdir(parents=True)
+                for i in range(2):
+                    sf.write(root / "female1" / sub / f"{i}.wav",
+                             np.zeros(16000, np.float32), 16000)
+            wavs, _ = _collect(root, clips_per_speaker=9, seconds=0.5, sr=16000,
+                               glob="excerpts/straight/*.wav")
+            self.assertEqual(len(wavs), 2)
+
+    def test_the_verdict_records_the_threshold_it_was_judged_against(self):
+        # 後から閾値を動かせないよう、判定に使った値を報告へ残す。
+        from tools.speaker_calibrate import calibration_report, passes_calibration
+        embs = [np.array([1.0, 0.0]), np.array([1.0, 0.01]),
+                np.array([0.0, 1.0]), np.array([0.01, 1.0]),
+                np.array([1.0, 1.0]), np.array([1.0, 1.01])]
+        rep = calibration_report(embs, ["female1", "female1", "female2", "female2",
+                                        "male1", "male1"])
+        passes_calibration(rep, max_overlap=0.20)
+        self.assertEqual(rep["verdict"]["max_overlap"], 0.20)
+        self.assertIn("passed", rep["verdict"])
+
+
+class ToolHelpTests(unittest.TestCase):
+    """`tools/*.py --help` が落ちないこと。
+
+    **実際に 2 本落ちていました。** `svc_convert.py` は help 文字列の `%` を argparse が
+    書式指定子として解釈して `ValueError`、`nhv_indist.py` は em-dash（U+2014）が
+    日本語 Windows の cp932 コンソールに書けず `UnicodeEncodeError` でした。
+
+    どちらも「動かしてみるまで分からない」種類の壊れ方で、しかも `--help` は道具を
+    使い始める最初の一歩です。文字の使い方まで含めて固定します。
+    """
+
+    @property
+    def TOOLS(self):
+        """`main()` を持つ `tools/*.py` を**自動で拾う**。
+
+        手書きの一覧にすると、後から足した道具が黙って漏れます（`audio_metrics.py` の
+        ようにライブラリしか無いものは CLI が無いので対象外）。
+        """
+        import importlib
+        names = []
+        for f in sorted(Path(__file__).parent.glob("tools/*.py")):
+            if f.name.startswith("_"):
+                continue
+            if hasattr(importlib.import_module(f"tools.{f.stem}"), "main"):
+                names.append(f.stem)
+        self.assertGreaterEqual(len(names), 8, "tools の収集に失敗している")
+        return names
+
+    def _help_text(self, name):
+        import contextlib
+        import importlib
+        import io
+        mod = importlib.import_module(f"tools.{name}")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit) as cm:
+            with unittest.mock.patch.object(sys, "argv", [name, "--help"]):
+                mod.main()
+        self.assertEqual(cm.exception.code, 0, f"tools/{name}.py --help が異常終了した")
+        return buf.getvalue()
+
+    def test_every_tool_renders_its_help(self):
+        for name in self.TOOLS:
+            with self.subTest(tool=name):
+                self.assertIn("usage", self._help_text(name).lower())
+
+    def test_help_text_survives_a_cp932_console(self):
+        # 開発機は日本語 Windows。cp932 で書けない文字を help に入れると、使う瞬間に落ちる。
+        for name in self.TOOLS:
+            with self.subTest(tool=name):
+                try:
+                    self._help_text(name).encode("cp932")
+                except UnicodeEncodeError as e:
+                    self.fail(f"tools/{name}.py の help に cp932 で書けない文字がある: {e}")
+

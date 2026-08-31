@@ -20,24 +20,26 @@ content cos と同じく、必ず 2 つの基準と並べます。
 `transformers` の `WavLMForXVector` で、**新しい依存は増えません**（ContentVec で既に
 transformers を使っているため）。**重みのライセンスは未確認**です。
 
-**確認済み（2026-08-31）: 手元で使える話者照合モデルは、同性の別歌手を分けられません。**
-VocalSet 20 歌手で 3 通り較正しました（`transformers` にある x-vector モデル 2 本）。
+**確認済み（2026-09-01）: ECAPA-TDNN を 12 秒以上のクリップで使うこと。** 較正は
+[`speaker_calibrate.py`](speaker_calibrate.py) で再実行できます（VocalSet 20 歌手・
+excerpts/straight・各 3 本）。**合格条件は走らせる前に決めた `MAX_OVERLAP = 0.20`** です。
 
-| 素材 / モデル | 同一話者 | 別話者・同性 | 別話者・異性 | 重なり |
-|---|---|---|---|---|
-| arpeggios・straight 4 本 / wavlm-base-plus-sv | 0.7533 ± 0.1379 | 0.6961 ± 0.1476 | 0.6813 ± 0.1323 | 88.3% |
-| 同上 / unispeech-sat-base-plus-sv | 0.7426 ± 0.1540 | 0.6970 ± 0.1522 | 0.6400 ± 0.1557 | 93.9% |
-| **excerpts・straight 3 曲 / wavlm-base-plus-sv** | **0.8307 ± 0.0832** | **0.7713 ± 0.1104** | **0.5199 ± 0.1296** | **83.3%** |
+| encoder | クリップ長 | 同一話者 | 別話者・同性 | 別話者・異性 | 重なり | 判定 |
+|---|---:|---|---|---|---:|:--:|
+| wavlm-base-plus-sv | 6 s | 0.8307 ± 0.0832 | 0.7713 ± 0.1104 | 0.5199 ± 0.1296 | 83.3% | 不合格 |
+| wavlm-base-plus-sv | 12 s | 0.8856 ± 0.0670 | 0.8196 ± 0.0943 | 0.5314 ± 0.1323 | 77.0% | 不合格 |
+| ECAPA-TDNN | 6 s | 0.5415 ± 0.1331 | 0.3452 ± 0.1325 | 0.1816 ± 0.0976 | 56.9% | 不合格 |
+| **ECAPA-TDNN** | **12 s** | 0.6632 ± 0.0995 | 0.3891 ± 0.1369 | 0.1966 ± 0.1013 | **19.8%** | **合格** |
+| **ECAPA-TDNN** | **20 s** | 0.7096 ± 0.1037 | 0.4040 ± 0.1386 | 0.2109 ± 0.1096 | **17.3%** | **合格** |
 
-「重なり」は、同一話者ペアの下位 5% を超える別話者・同性ペアの割合です。曲の抜粋
-（同一技法・別の曲）で測るのが最も公平で分離も良いのですが、それでも同性では差 0.059 に対し
-ばらつきが 0.08〜0.11 あり、**83% が重なります**。arpeggio は同じ音階を単母音で歌うため
-話者性の手がかりが乏しく、さらに悪くなります。
+「重なり」は、同一話者ペアの下位 5% を超える別話者・同性ペアの割合です。
 
-**使ってよい範囲:** 異性間（0.5199 対 0.8307）は明確に分かれるので、**source と target の
-性別が違う場合の粗い確認にだけ**使えます。**同性間の target similarity は、この encoder では
-主張できません。** 歌声で較正を通る encoder（ECAPA-TDNN 等が候補。依存の追加が要る）に
-差し替えるまで、M4 ゴール 2 の similarity は「未測定」のままにします。
+**encoder と長さの両方が要ります。** 長さだけでは足りず（x-vector は 12 秒でも 77.0%）、
+ECAPA だけでも足りません（6 秒では 56.9%）。**6 秒で測ったことが、以前
+「話者類似度は測れない」と結論した原因の半分でした。**
+
+そのため `similarity_report` は `MIN_SECONDS` 秒未満のクリップを**拒否します**。較正の外だと
+承知のうえで測るときだけ `min_seconds=0` を明示してください。
 
 **差し替えたら必ずこの較正をやり直すこと**（同一話者 / 別話者・同性 / 別話者・異性の 3 群で、
 重なりが十分小さいこと）。**重みのライセンスは未確認**です。
@@ -53,6 +55,11 @@ import numpy as np
 
 Embed = Callable[[np.ndarray, int], np.ndarray]      # (wav16, sr) -> [D]
 
+# **較正が成り立つ最短のクリップ長。** VocalSet 20 歌手の較正（tools/speaker_calibrate.py）で、
+# ECAPA-TDNN の重なりは 6 秒だと 56.9%、12 秒で 19.8%、20 秒で 17.3% でした。**短いクリップでは
+# 事前登録した 20% を満たしません。** ここを下回る素材で数値を出しても読めないので拒否します。
+MIN_SECONDS = 12.0
+
 
 def cosine(a: np.ndarray, b: np.ndarray) -> float:
     x = np.asarray(a, dtype=np.float64).ravel()
@@ -67,13 +74,30 @@ def _agg(vals: Sequence[float]) -> dict[str, Any] | None:
     return {"mean": float(np.mean(vals)), "median": float(np.median(vals)), "n": int(len(vals))}
 
 
+def _check_lengths(groups: dict[str, Sequence[np.ndarray]], sr: int, min_seconds: float) -> None:
+    """較正が成り立つ長さか。**足りなければ黙って測らず、どこが短いかを言って止まります。**"""
+    if min_seconds <= 0:
+        return
+    need = int(min_seconds * sr)
+    for name, wavs in groups.items():
+        for k, w in enumerate(wavs):
+            if len(w) < need:
+                raise ValueError(
+                    f"{name} の {k} 本目が {len(w) / sr:.1f} 秒しかありません。この指標は "
+                    f"{MIN_SECONDS} 秒以上で較正しています（6 秒では重なり 56.9% で通りません）。"
+                    "較正の外だと承知のうえで測るなら min_seconds=0 を明示してください")
+
+
 def similarity_report(converted: Sequence[np.ndarray], target_refs: Sequence[np.ndarray],
                       unrelated: Sequence[np.ndarray] | None = None, *,
-                      embed: Embed, sr: int) -> dict[str, Any]:
+                      embed: Embed, sr: int,
+                      min_seconds: float = MIN_SECONDS) -> dict[str, Any]:
     """変換 / 上限 / 下限の 3 つを返す。
 
     **target の参照クリップは 2 本以上**必要です。1 本では「同一話者でもここまでしか
     届かない」という上限が作れず、変換の数値を読めません。黙って上限なしの数値を返しません。
+
+    **クリップは `MIN_SECONDS` 秒以上**必要です。較正はその長さでしか通っていません。
     """
     if len(target_refs) < 2:
         raise ValueError(
@@ -81,6 +105,8 @@ def similarity_report(converted: Sequence[np.ndarray], target_refs: Sequence[np.
             "を作るのに 2 本以上要ります")
     if not len(converted):
         raise ValueError("変換後のクリップが空です")
+    _check_lengths({"converted": converted, "target_refs": target_refs,
+                    "unrelated": unrelated or []}, sr, min_seconds)
     # **1 クリップにつき 1 回だけ埋め込む。** ペアごとに呼ぶと実モデルで組合せ爆発する。
     ref_e = [embed(w, sr) for w in target_refs]
     conv_e = [embed(w, sr) for w in converted]
@@ -91,9 +117,13 @@ def similarity_report(converted: Sequence[np.ndarray], target_refs: Sequence[np.
     conv = [cosine(c, r) for c in conv_e for r in ref_e]
     floor = [cosine(r, o) for r in ref_e for o in other_e]
 
+    # **較正は長さに依存する。** 後から読む人が「較正の内側で出た値か」を判断できるよう残す。
+    seen = [len(w) / sr for w in (list(converted) + list(target_refs) + list(unrelated or []))]
     out: dict[str, Any] = {"converted_vs_target": _agg(conv),
                            "target_self_ceiling": _agg(ceiling),
-                           "unrelated_floor": _agg(floor), "recovery": None}
+                           "unrelated_floor": _agg(floor), "recovery": None,
+                           "clip_seconds": {"min": float(min(seen)), "max": float(max(seen)),
+                                            "min_required": float(min_seconds)}}
     if floor:
         span = out["target_self_ceiling"]["mean"] - out["unrelated_floor"]["mean"]
         if abs(span) > 1e-9:
@@ -134,6 +164,45 @@ class XVectorEncoder:
                 "speaker_encoder_license": "未確認（内部指標としてのみ使う）"}
 
 
+class EcapaEncoder:
+    """ECAPA-TDNN 話者埋め込み（speechbrain）。16 kHz の 1 本の波形 -> 埋め込み [192]。
+
+    x-vector（`XVectorEncoder`）が歌声の同性ペアで較正を通らなかったため追加しました。
+    **これも通るとは限りません。** 使う前に必ず
+    [`speaker_calibrate.py`](speaker_calibrate.py) を走らせ、重なりを確認すること。
+
+    重みは初回に HuggingFace から取得し、`~/.cache/speechbrain/` へ置きます
+    （リポジトリを汚さないため。speechbrain の既定は `./pretrained_models/`）。
+    **重みのライセンスは未確認**なので、内部指標としてのみ使います。
+    """
+
+    def __init__(self, model_id: str = "speechbrain/spkrec-ecapa-voxceleb",
+                 device: str = "cpu", savedir: str | None = None):
+        import torch
+        from speechbrain.inference.speaker import EncoderClassifier
+        self.model_id, self.device = model_id, device
+        self._savedir = savedir or str(Path.home() / ".cache" / "speechbrain"
+                                       / model_id.replace("/", "--"))
+        self.model = EncoderClassifier.from_hparams(
+            source=model_id, savedir=self._savedir, run_opts={"device": device})
+        self.model.eval()
+        self._torch = torch
+
+    def __call__(self, wav: np.ndarray, sr: int) -> np.ndarray:
+        if int(sr) != 16000:
+            raise ValueError(f"16 kHz を渡すこと（{sr} が来ました）")
+        x = self._torch.from_numpy(np.ascontiguousarray(wav, dtype=np.float32)).unsqueeze(0)
+        with self._torch.no_grad():
+            e = self.model.encode_batch(x.to(self.device))
+        return e.reshape(-1).cpu().numpy().astype(np.float32)
+
+    def manifest(self) -> dict[str, Any]:
+        return {"speaker_encoder": self.model_id,
+                "speaker_encoder_kind": "ecapa-tdnn (speechbrain)",
+                "speaker_encoder_sr": 16000,
+                "speaker_encoder_license": "未確認（内部指標としてのみ使う）"}
+
+
 def _load(paths: Sequence[Path], sr: int, seconds: float) -> list[np.ndarray]:
     import soundfile as sf
 
@@ -164,9 +233,14 @@ def main() -> int:
     ap.add_argument("--unrelated", default=None, help="無関係な話者の WAV ディレクトリ（下限）")
     ap.add_argument("--out", default=None, help="report の書き出し先 JSON")
     ap.add_argument("--n-clips", type=int, default=16, help="各群から使うクリップ数")
-    ap.add_argument("--seconds", type=float, default=6.0)
+    ap.add_argument("--seconds", type=float, default=20.0,
+                    help=f"各クリップの長さ。較正は {MIN_SECONDS} 秒以上でのみ通っている")
     ap.add_argument("--device", default="cpu")
-    ap.add_argument("--model", default="microsoft/wavlm-base-plus-sv")
+    ap.add_argument("--encoder", default="ecapa", choices=("ecapa", "xvector"),
+                    help="既定は ECAPA-TDNN（較正を通った唯一の encoder）")
+    ap.add_argument("--model", default=None, help="model id を上書きする")
+    ap.add_argument("--min-seconds", type=float, default=MIN_SECONDS,
+                    help="0 にすると較正外の長さでも測る（読めない値になる点に注意）")
     a = ap.parse_args()
 
     def pick(root: str | None) -> list[Path]:
@@ -179,9 +253,13 @@ def main() -> int:
     conv_p, ref_p, other_p = pick(a.converted), pick(a.target), pick(a.unrelated)
     if not conv_p or not ref_p:
         sys.exit(f"WAV が足りません: converted {len(conv_p)} / target {len(ref_p)}")
-    enc = XVectorEncoder(a.model, device=a.device)
+    if a.encoder == "ecapa":
+        enc = EcapaEncoder(a.model or "speechbrain/spkrec-ecapa-voxceleb", device=a.device)
+    else:
+        enc = XVectorEncoder(a.model or "microsoft/wavlm-base-plus-sv", device=a.device)
     rep = similarity_report(_load(conv_p, 16000, a.seconds), _load(ref_p, 16000, a.seconds),
-                            _load(other_p, 16000, a.seconds), embed=enc, sr=16000)
+                            _load(other_p, 16000, a.seconds), embed=enc, sr=16000,
+                            min_seconds=a.min_seconds)
     rep["manifest"] = enc.manifest()
     rep["files"] = {"converted": [str(p) for p in conv_p], "target": [str(p) for p in ref_p],
                     "unrelated": [str(p) for p in other_p]}

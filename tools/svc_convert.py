@@ -55,8 +55,8 @@ def main() -> int:
                     help="入力を peak 0.95 へ揃える。**学習と条件が変わるので既定は off**")
     ap.add_argument("--match-loudness", action="store_true",
                     help="入力の音量を **学習分布の平均へ寄せる**。配信用に整えられた音源は"
-                         "学習素材よりずっと大きく、そのままだと高域が削れる（実測 -47%、"
-                         "合わせると -22%）。手元録音や配信音源にはこれを付ける")
+                         "学習素材よりずっと大きく、そのままだと高域が削れる（実測 -47%%、"
+                         "合わせると -22%%）。手元録音や配信音源にはこれを付ける")
     ap.add_argument("--self-check", action="store_true",
                     help="入力の GT mel も NHVSing に通し、ボコーダー由来の劣化を分離する")
     ap.add_argument("--device", default="cpu")

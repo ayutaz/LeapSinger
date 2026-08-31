@@ -190,10 +190,11 @@ the feature shard is implemented as well: one command turns a WAV directory into
 bit-identical on re-run. Overfitting a real phrase and producing a WAV has been verified, a **multi-singer base
 model over 23 speakers / ~18 hours** has been pretrained for 60,000 steps (content is preserved
 for an unseen source singer, measured), and that base has been **fine-tuned to a target singer
-for 20,000 steps**. **Quality evaluation, the Seed-VC comparison, and the real-time student are
-not done yet.** Speaker similarity is not merely unmeasured but currently *unmeasurable* here:
-the x-vector encoders we calibrated cannot separate same-gender singers, so "target likeness"
-is not something this project reports yet.
+for 20,000 steps**. Speaker similarity is now measurable: ECAPA-TDNN on clips of 12 s or longer passes our
+pre-registered singing calibration, and it shows the fine-tune does move the voice toward the
+target (recovery from the floor rises from 45.1% to 54.9%). **Quality evaluation, the Seed-VC
+comparison, and the real-time student are not done yet** -- intelligibility (CER), signal
+quality, timing, and inference RTF have no tooling here at all.
 The Japanese research suite covering requirements, architecture, data/GPU, training,
 evaluation, prior art/licensing, implementation status, and sources is indexed at
 [doc/svc.md](doc/svc.md).

@@ -39,6 +39,13 @@ ops = [
 dev = [
     "ruff>=0.16.5",
 ]
+# Speaker-similarity evaluation (tools/speaker_similarity.py, tools/speaker_calibrate.py).
+# ECAPA-TDNN is the only encoder that passed our singing calibration: the transformers
+# x-vector models cannot separate same-gender singers (overlap 77-83% vs ECAPA's 17-20%).
+# Kept out of the base install because it also pulls torchaudio.
+eval = [
+    "speechbrain>=1.1.1",
+]
 
 # Notes:
 # - F0 extraction uses RMVPE (a neural pitch estimator). See README for the weight download.
