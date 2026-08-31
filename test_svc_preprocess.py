@@ -20,7 +20,7 @@ from leapsinger.config import MelSpec
 from leapsinger.mel import wav_to_mel_nhv
 from preprocess.svc.align import align_left
 from preprocess.svc.chunk import chunk_spans, voiced_ratio
-from preprocess.svc.extract import extract_phrase
+from preprocess.svc.extract import extract_phrase, transpose_f0
 from preprocess.svc.loudness import dataset_stats, frame_log_rms, normalize_with_stats
 from preprocess.svc.shard import build_shard, features_to_item
 from preprocess.svc.subset import apply_subset, subset_indices
@@ -492,6 +492,39 @@ class ExtractPhraseTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             self._extract(content_encoder=bad)
+
+
+class TransposeF0Tests(unittest.TestCase):
+    """変換時の移調。**F0 だけ**を動かし、content と loudness には触らない。
+
+    入力の F0 が低いと出力の高域が落ちる現象を、F0 単独で切り分けるために足した
+    （[実行計画](doc/svc-plan.md) M3）。男女をまたいで変換するときの実用機能でもある。
+    """
+
+    def test_an_octave_down_halves_the_voiced_frequencies(self):
+        f0 = np.array([220.0, 440.0, 110.0], dtype=np.float32)
+        np.testing.assert_allclose(transpose_f0(f0, -12.0), [110.0, 220.0, 55.0], rtol=1e-6)
+
+    def test_unvoiced_frames_stay_at_zero(self):
+        out = transpose_f0(np.array([0.0, 220.0, 0.0], dtype=np.float32), 7.0)
+        self.assertEqual(float(out[0]), 0.0)
+        self.assertEqual(float(out[2]), 0.0)
+
+    def test_uses_the_equal_tempered_ratio_for_fractional_semitones(self):
+        out = transpose_f0(np.array([440.0], dtype=np.float32), 3.5)
+        self.assertAlmostEqual(float(out[0]), 440.0 * 2 ** (3.5 / 12), places=3)
+
+    def test_zero_semitones_leaves_the_values_alone(self):
+        f0 = np.array([0.0, 220.0], dtype=np.float32)
+        np.testing.assert_array_equal(transpose_f0(f0, 0.0), f0)
+
+    def test_does_not_modify_the_input_array(self):
+        f0 = np.array([220.0], dtype=np.float32)
+        transpose_f0(f0, -12.0)
+        self.assertEqual(float(f0[0]), 220.0)
+
+    def test_keeps_float32(self):
+        self.assertEqual(transpose_f0(np.array([220.0], np.float32), -12.0).dtype, np.float32)
 
 
 class ChunkSpansTests(unittest.TestCase):

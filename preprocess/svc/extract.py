@@ -34,6 +34,21 @@ def _resample(wav: np.ndarray, src_sr: int, dst_sr: int) -> np.ndarray:
     return resample_poly(wav, int(dst_sr), int(src_sr)).astype(np.float32)
 
 
+def transpose_f0(f0_hz: np.ndarray, semitones: float) -> np.ndarray:
+    """F0 を半音単位で移調する。**無声（0）はそのまま 0 に残す。**
+
+    content と loudness には触りません。変換時に F0 だけを動かせるようにしておくと、
+    「入力の F0 が低いと出力が暗くなる」現象を F0 単独で切り分けられます。男女をまたいで
+    変換するときにも使います。
+    """
+    out = np.asarray(f0_hz, dtype=np.float32).copy()
+    if float(semitones) == 0.0:
+        return out
+    voiced = out > 0.0
+    out[voiced] = (out[voiced] * (2.0 ** (float(semitones) / 12.0))).astype(np.float32)
+    return out
+
+
 def extract_phrase(wav: np.ndarray, sr: int, *, content_encoder: ContentEncoder,
                    f0_extract: F0Extract, mel: MelSpec,
                    encoder_sr: int = 16000) -> dict[str, Any]:

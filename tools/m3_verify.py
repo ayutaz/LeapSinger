@@ -77,6 +77,10 @@ def main() -> int:
     ap.add_argument("--seconds", type=float, default=6.0)
     ap.add_argument("--min-voiced", type=float, default=0.3)
     ap.add_argument("--num-steps", type=int, default=1)
+    ap.add_argument("--transpose", type=float, default=0.0,
+                    help="F0 を半音単位で移調する。**content と loudness には触らない**。"
+                         "上限（GT mel の再合成）も同じ F0 で鳴らすので、音高が違うことによる"
+                         "見かけの差は入らない", )
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--content-model", default="lengyue233/content-vec-best")
     ap.add_argument("--layer", type=int, default=12)
@@ -89,7 +93,7 @@ def main() -> int:
 
     from infer import infer_svc_mel, load_acoustic, load_vocoder, mel_to_wav
     from preprocess.svc.encoders import ContentVecEncoder, RmvpeF0
-    from preprocess.svc.extract import _resample, extract_phrase
+    from preprocess.svc.extract import _resample, extract_phrase, transpose_f0
     from preprocess.svc.shard import features_to_item
 
     torch.use_deterministic_algorithms(True)
@@ -104,7 +108,7 @@ def main() -> int:
     encoder = ContentVecEncoder(a.content_model, layer=a.layer, device=a.device)
     f0x = RmvpeF0(device=a.device)
     print(f"[m3] arch={cfg.get('arch')} n_speakers={cfg.get('n_speakers')} "
-          f"spk_id={a.spk_id} steps={a.num_steps}", flush=True)
+          f"spk_id={a.spk_id} steps={a.num_steps} transpose={a.transpose:+g}", flush=True)
 
     src_root = Path(a.source)
     wavs = sorted(p for p in src_root.rglob("*.wav"))
@@ -130,6 +134,7 @@ def main() -> int:
         # loudness 条件が学習分布から 1.2 sigma ずれ、出力の高域が削れる（実測）。
 
         feats = extract_phrase(seg, mel.sr, content_encoder=encoder, f0_extract=f0x, mel=mel)
+        feats["f0_hz"] = transpose_f0(feats["f0_hz"], a.transpose)
         if float(np.mean(feats["uv"] > 0.5)) < a.min_voiced:
             continue
 
@@ -180,6 +185,7 @@ def main() -> int:
                 "n": len(vals)} if vals else None
 
     report = {"ckpt": a.ckpt, "spk_id": a.spk_id, "num_steps": a.num_steps,
+              "transpose": a.transpose,
               "source": str(src_root), "n_clips": len(rows), "seconds": a.seconds,
               "content_cos_converted": agg("content_cos_converted"),
               "content_cos_resynth_ceiling": agg("content_cos_resynth"),

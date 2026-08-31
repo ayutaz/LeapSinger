@@ -45,6 +45,8 @@ def main() -> int:
     ap.add_argument("--manifest", required=True, help="target 話者の shard の manifest.json")
     ap.add_argument("--spk-id", type=int, default=0, help="変換先の speaker id")
     ap.add_argument("--num-steps", type=int, default=1)
+    ap.add_argument("--transpose", type=float, default=0.0,
+                    help="F0 を半音単位で移調する。男女をまたぐときに使う")
     ap.add_argument("--chunk-sec", type=float, default=20.0,
                     help="この長さごとに分けて変換する（長い曲のメモリ対策）")
     ap.add_argument("--start", type=float, default=0.0, help="この秒数から")
@@ -67,7 +69,7 @@ def main() -> int:
 
     from infer import infer_svc_mel, load_acoustic, load_vocoder, mel_to_wav
     from preprocess.svc.encoders import ContentVecEncoder, RmvpeF0
-    from preprocess.svc.extract import _resample, extract_phrase
+    from preprocess.svc.extract import _resample, extract_phrase, transpose_f0
     from preprocess.svc.loudness import frame_log_rms, loudness_match_gain
     from preprocess.svc.shard import features_to_item
 
@@ -118,6 +120,7 @@ def main() -> int:
         if len(seg) < mel.hop * 4:
             break
         feats = extract_phrase(seg, mel.sr, content_encoder=encoder, f0_extract=f0x, mel=mel)
+        feats["f0_hz"] = transpose_f0(feats["f0_hz"], a.transpose)
         item = features_to_item(feats, manifest)
         item["spk_id"] = int(a.spk_id)
         pred = infer_svc_mel(model, item, num_steps=a.num_steps, device=a.device)
