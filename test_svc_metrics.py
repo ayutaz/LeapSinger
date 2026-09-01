@@ -700,3 +700,72 @@ class NormaliseOutputsTests(unittest.TestCase):
         self.assertEqual(normalised_name("unseen00", "converted"), "unseen00_converted.wav")
         self.assertEqual(normalised_name("unseen00", "source"), "unseen00_source.wav")
 
+
+class GuardRailTests(unittest.TestCase):
+    """事前登録した guard rail 判定（[実行計画](doc/svc-plan.md) M5「決定 1」）。
+
+    **絶対閾値は置きません。** 「悪化」= **clip 間のばらつき（標準誤差）を超えて相手より低い**。
+    手元のデータ量では任意の数字を発明することになるためです。
+
+    **preference で勝っても guard rail を 1 つでも落としていたら「より良い」とは書きません。**
+    その判断をコードに書いて、後から緩められないようにします。
+    """
+
+    def test_a_clear_drop_beyond_the_standard_error_is_flagged(self):
+        from tools.guard_rail import compare_metric
+        ours = [0.50] * 10
+        theirs = [0.80] * 10
+        r = compare_metric(ours, theirs, higher_is_better=True)
+        self.assertTrue(r["worse"])
+
+    def test_a_difference_inside_the_noise_is_not_flagged(self):
+        from tools.guard_rail import compare_metric
+        rng = np.random.default_rng(0)
+        ours = list(rng.normal(0.80, 0.10, 20))
+        theirs = list(rng.normal(0.81, 0.10, 20))
+        r = compare_metric(ours, theirs, higher_is_better=True)
+        self.assertFalse(r["worse"])
+
+    def test_being_better_is_never_flagged_as_worse(self):
+        from tools.guard_rail import compare_metric
+        r = compare_metric([0.9] * 10, [0.5] * 10, higher_is_better=True)
+        self.assertFalse(r["worse"])
+
+    def test_lower_is_better_metrics_flip_the_direction(self):
+        # CER やずれは小さいほうが良い。方向を取り違えると結論が反転する。
+        from tools.guard_rail import compare_metric
+        r = compare_metric([0.9] * 10, [0.2] * 10, higher_is_better=False)
+        self.assertTrue(r["worse"])
+
+    def test_the_margin_and_threshold_are_reported(self):
+        from tools.guard_rail import compare_metric
+        r = compare_metric([0.5] * 10, [0.8] * 10, higher_is_better=True)
+        self.assertIn("diff", r)
+        self.assertIn("threshold", r)
+        self.assertLess(r["diff"], 0)
+
+    def test_a_verdict_requires_every_rail_to_hold(self):
+        from tools.guard_rail import verdict
+        rails = {"content": {"worse": False}, "similarity": {"worse": True}}
+        v = verdict(rails, preference_winner="ours", ours="ours")
+        self.assertFalse(v["may_claim_better"])
+        self.assertEqual(v["failed_rails"], ["similarity"])
+
+    def test_winning_preference_with_all_rails_intact_allows_the_claim(self):
+        from tools.guard_rail import verdict
+        rails = {"content": {"worse": False}, "similarity": {"worse": False}}
+        v = verdict(rails, preference_winner="ours", ours="ours")
+        self.assertTrue(v["may_claim_better"])
+
+    def test_losing_preference_never_allows_the_claim(self):
+        from tools.guard_rail import verdict
+        rails = {"content": {"worse": False}}
+        v = verdict(rails, preference_winner="theirs", ours="ours")
+        self.assertFalse(v["may_claim_better"])
+
+    def test_a_tie_in_preference_does_not_allow_the_claim(self):
+        from tools.guard_rail import verdict
+        rails = {"content": {"worse": False}}
+        v = verdict(rails, preference_winner=None, ours="ours")
+        self.assertFalse(v["may_claim_better"])
+
