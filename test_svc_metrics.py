@@ -1234,3 +1234,63 @@ class SvcGanSmokeTests(unittest.TestCase):
         src = self._smoke_src()
         self.assertRegex(src, r'\("svc-train-gan",\s*st_svc_train_gan')
 
+
+class VastCliResolutionTests(unittest.TestCase):
+    """vastai CLI の呼び出し方（M5 の GAN 実験の直前に踏んだ）。
+
+    **`vastai.exe` は uv の shim で、実行時に別の Python を参照します。** その Python が
+    壊れていると `ImportError: DLL load failed while importing _socket` で落ち、
+    `uv tool install --reinstall` でも直りません（壊れているのは shim の側だから）。
+
+    **ツール環境の Python が生きていれば `-m vastai.cli.main` で回避できます。**
+    実際にそうなっていたので、その経路を持たせます。
+    """
+
+    def test_it_prefers_a_working_launcher(self):
+        from tools.vast import _vastai_cmd
+        cmd = _vastai_cmd(which=lambda n: "/usr/bin/vastai", probe=lambda c: True)
+        self.assertEqual(cmd, ["/usr/bin/vastai"])
+
+    def test_a_broken_launcher_falls_back_to_the_tool_interpreter(self):
+        from tools.vast import _vastai_cmd
+        cmd = _vastai_cmd(which=lambda n: "/broken/vastai",
+                          probe=lambda c: "python" in c[0],
+                          tool_python="/tools/vastai/python.exe")
+        self.assertEqual(cmd, ["/tools/vastai/python.exe", "-m", "vastai.cli.main"])
+
+    def test_it_fails_loudly_when_nothing_works(self):
+        # 黙って別の経路を試し続けず、何が壊れているかを言って止まる。
+        from tools.vast import _vastai_cmd
+        with self.assertRaises(SystemExit) as cm:
+            _vastai_cmd(which=lambda n: None, probe=lambda c: False, tool_python=None)
+        self.assertIn("vastai", str(cm.exception))
+
+    def test_the_child_environment_drops_the_parent_interpreter_vars(self):
+        """**`uv run` 配下から別の Python を起動すると壊れます。**
+
+        `uv run` は `PYTHONHOME` を親（3.13）に向けて設定し、それが子へ継承されるので、
+        ツール環境の Python（3.14）が **3.13 の標準ライブラリを読みに行き**
+        `ImportError: DLL load failed while importing _socket` で落ちます。
+        **親のインタプリタを指す変数を落としてから起動すること。**
+        """
+        from tools.vast import _child_env
+        env = _child_env({"PYTHONHOME": "/py313", "PYTHONPATH": "/py313/lib",
+                          "VIRTUAL_ENV": "/repo/.venv", "PATH": "/usr/bin"})
+        for k in ("PYTHONHOME", "PYTHONPATH", "VIRTUAL_ENV"):
+            self.assertNotIn(k, env)
+        self.assertEqual(env["PATH"], "/usr/bin")
+
+    def test_unrelated_variables_survive(self):
+        # API token などを落とすと動かなくなる。落とすのは干渉するものだけ。
+        from tools.vast import _child_env
+        env = _child_env({"VAST_API_KEY": "x", "PYTHONHOME": "/py"})
+        self.assertEqual(env["VAST_API_KEY"], "x")
+
+    def test_the_probe_actually_runs_the_candidate(self):
+        # 存在確認だけでは足りない。**実際に起動できるか**を見る（今回の壊れ方は起動時）。
+        from tools.vast import _vastai_cmd
+        probed = []
+        _vastai_cmd(which=lambda n: "/usr/bin/vastai",
+                    probe=lambda c: probed.append(c) or True)
+        self.assertEqual(probed, [["/usr/bin/vastai"]])
+

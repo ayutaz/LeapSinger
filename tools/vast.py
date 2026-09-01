@@ -73,14 +73,87 @@ def api_key() -> str:
              f".env にある変数名: {found or '(なし)'}")
 
 
-def _vastai() -> str:
-    exe = shutil.which("vastai")
-    if exe:
-        return exe
-    for cand in (ROOT / ".venv" / "Scripts" / "vastai.exe", ROOT / ".venv" / "bin" / "vastai"):
+def _tool_python() -> str | None:
+    """`uv tool install vastai` が作ったツール環境の Python。
+
+    **exe ランチャーが壊れていても、こちらは生きていることがあります。** shim は実行時に
+    別の Python を参照するので、その Python が壊れると起動時に落ちます。
+    """
+    for cand in (Path.home() / "AppData/Roaming/uv/tools/vastai/Scripts/python.exe",
+                 Path.home() / ".local/share/uv/tools/vastai/bin/python"):
         if cand.exists():
             return str(cand)
-    sys.exit("vastai CLI が見つかりません。`uv sync --extra ops` を実行してください。")
+    return None
+
+
+# `uv run` が設定し、**別の Python を起動すると干渉する**変数。
+# これを継承すると、ツール環境の Python（3.14）が親（3.13）の標準ライブラリを読みに行き、
+# `ImportError: DLL load failed while importing _socket` で落ちます。
+_PARENT_INTERPRETER_VARS = ("PYTHONHOME", "PYTHONPATH", "VIRTUAL_ENV", "PYTHONEXECUTABLE",
+                            "UV_INTERNAL__PARENT_INTERPRETER")
+
+
+def _child_env(env: dict[str, str] | None = None) -> dict[str, str]:
+    """別の Python を起動するための環境。**親を指す変数だけ落とします。**
+
+    API token などは残します（落とすと動きません）。
+    """
+    src = dict(os.environ if env is None else env)
+    return {k: v for k, v in src.items() if k not in _PARENT_INTERPRETER_VARS}
+
+
+def _probe(cmd: list[str]) -> bool:
+    """**実際に起動できるか**を見る。存在確認では足りません。
+
+    実際に踏んだ壊れ方は「ファイルはあるが起動時に `ImportError: DLL load failed while
+    importing _socket`」でした。`--version` を投げて確かめます。
+    """
+    try:
+        p = subprocess.run([*cmd, "--version"], capture_output=True, timeout=60,
+                           env=_child_env())
+        return p.returncode == 0
+    except Exception:                                        # noqa: BLE001
+        return False
+
+
+def _vastai_cmd(*, which=None, probe=None, tool_python: str | None = "") -> list[str]:
+    """vastai を起動するコマンド列を返す。
+
+    順に試し、**起動できたものを採ります**:
+      1. PATH の `vastai`
+      2. リポジトリの .venv 内
+      3. **ツール環境の Python から `-m vastai.cli.main`**（exe が壊れているとき）
+    """
+    which = which or shutil.which
+    probe = probe or _probe
+    if tool_python == "":
+        tool_python = _tool_python()
+
+    cands: list[list[str]] = []
+    exe = which("vastai")
+    if exe:
+        cands.append([exe])
+    for cand in (ROOT / ".venv" / "Scripts" / "vastai.exe", ROOT / ".venv" / "bin" / "vastai"):
+        if cand.exists():
+            cands.append([str(cand)])
+    if tool_python:
+        cands.append([tool_python, "-m", "vastai.cli.main"])
+
+    for c in cands:
+        if probe(c):
+            return c
+    sys.exit(
+        "vastai CLI を起動できません（見つけた候補: "
+        f"{[c[0] for c in cands] or 'なし'}）。\n"
+        "  exe があるのに落ちる場合、uv の shim が参照する Python が壊れています"
+        "（`ImportError: DLL load failed while importing _socket`）。\n"
+        "  `uv tool install --reinstall vastai` で直らないときは、ツール環境の Python から "
+        "`-m vastai.cli.main` を使います。")
+
+
+def _vastai() -> str:
+    """後方互換。**新しいコードは `_vastai_cmd()` を使ってください。**"""
+    return _vastai_cmd()[0]
 
 
 def run(args: list[str], *, raw: bool = False, check: bool = True):
@@ -91,12 +164,12 @@ def run(args: list[str], *, raw: bool = False, check: bool = True):
     `'cp932' codec can't encode character` で落ちる（`show instances` で実測）。
     """
     key = api_key()
-    cmd = [_vastai(), *args] + (["--raw"] if raw else []) + ["--api-key", key]
+    cmd = [*_vastai_cmd(), *args] + (["--raw"] if raw else []) + ["--api-key", key]
     print(f"$ vastai {' '.join(args)}{' --raw' if raw else ''} --api-key ***",
           file=sys.stderr)                                # token はログに残さない
     p = subprocess.run(cmd, capture_output=True, text=True,
                        encoding="utf-8", errors="replace",
-                       env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+                       env={**_child_env(), "PYTHONIOENCODING": "utf-8"})
     if not raw and p.stdout:
         _write(p.stdout)
     if check and p.returncode != 0:
