@@ -105,8 +105,11 @@ No.7 は対象外**で、発声スタイルの coverage は技法ラベルを持
   設計上の制約になります。
 - **未知 source の内容保持が base から落ちていないこと。** M4 で、target の再現と未知 source の
   保持が単調に逆へ動くことを実測しました（[実行計画](svc-plan.md) M4）。
-- Seed-VC と blind listening test を実施する。
-- failure sample を除外せず分類して残す。
+- Seed-VC と blind listening test を実施する。**N=1 の非公式 preference test** として行い
+  （2026-09-01 決定）、**N を必ず併記する**。MOS とは呼ばない。
+- **合格条件は guard rail 方式**（絶対閾値を置かない）。詳細は
+  [評価計画](svc-evaluation.md) 8 節と [実行計画](svc-plan.md) M5。
+- failure sample を除外せず分類して残す。**除外は技術的失敗のみ**で、理由付きで残す。
 
 ### Gate C: streaming
 

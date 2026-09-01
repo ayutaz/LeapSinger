@@ -203,11 +203,29 @@ failure clip は削除せず、category と suspected component を付けます�
 
 ## 8. 合格条件
 
-**要ユーザー判断:** 数値閾値は target use case と test set 作成後に確定します。少なくとも以下を満たすまで品質達成を宣言しません。
+**決定（2026-09-01、測定の前に確定）: 絶対的な数値閾値は置きません。** 手元のデータ量
+（CER n=1、信号品質 n=2 で `si_sdr` の符号が反転）では、根拠のない数を発明することに
+なるためです。かわりに **guard rail 方式**を採ります。
+
+| 役割 | 内容 |
+|---|---|
+| **主要な判定** | **blind preference**（M5 の目的が比較だから）。**N=1 の非公式 test** として実施し、**N を併記する** |
+| **guard rail** | content cos / 話者類似度の回復率 / F0 相関 / timing の対応率 の **4 つ** |
+| **「悪化」の定義** | **clip 間のばらつき（標準誤差）を超えて Seed-VC より低いこと** |
+| **主張の制限** | **preference で勝っても guard rail を 1 つでも落としていたら「より良い」とは書かない** |
+
+guard rail の 4 つは**すべて source か target 録音を基準**にしているので、Seed-VC の出力にも
+そのまま当たります（上限を共有する必要はありません）。詳細は
+[実行計画](svc-plan.md) M5「事前登録した判定規則」。
+
+**以下は依然として、満たすまで品質達成を宣言しません。**
 
 - 実音声の end-to-end pipeline が再現可能。
 - unseen-source / held-out-song で重大な内容崩壊がない。
-- Seed-VC baseline に対する blind preference を記録済み。
+- Seed-VC baseline に対する blind preference を記録済み。**N=1 の非公式 test** として
+  実施し（2026-09-01 決定）、**N を併記する**。ラベルを隠し、順序を randomize し、
+  **両システムの出力に同じ loudness 揃え**を当てる。**除外は技術的失敗のみ**（無音・NaN・
+  長さ不一致）で、除外した clip は理由付きで残す。
 - target similarity の改善が pitch / intelligibility の悪化だけで得られていない。
   **前提として、使う speaker encoder が上限・下限・重なりの較正を歌声で通っていること**（4 節）。
 - 未知 source の内容保持が base から落ちていないこと。**M4 で、target の再現と未知 source の
