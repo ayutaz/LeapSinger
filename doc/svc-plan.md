@@ -28,7 +28,7 @@
 | 済 | `HarmonicSVCModel`、`ContentAdapter`、`SVCFeatureDataset`、train/infer 配線、`configs/svc_base.yaml` |
 | 済 | 合成テンソルによる targeted test（shape、padding、alignment 検証、checkpoint 往復） |
 | 済 | 再現可能な開発環境（Python 3.13 固定、`uv.lock`、CUDA 版 torch の実機疎通確認） |
-| 済 | 全経路の疎通確認を 1 コマンド化（`tools/smoke/run_smoke.py` 12 ステージ）、誤コマンドを実行前に止める hook、作業手順の skill 化 |
+| 済 | 全経路の疎通確認を 1 コマンド化（`tools/smoke/run_smoke.py` 13 ステージ）、誤コマンドを実行前に止める hook、作業手順の skill 化 |
 | 済 | 学習環境の決定（vast.ai の Linux GPU）と、その操作系（`tools/vast.py` / `tools/vast_bootstrap.sh`） |
 | 済 | content encoder・F0 extractor・loudness 正規化・補間方法・部分集合 seed の決定（[content encoder の選定](svc-content-encoder.md)） |
 | 済 | **M0 完了**（入手可能な素材について）。5 コーパスの取得・検査・coverage・split と台帳（[データセット台帳](svc-dataset-ledger.md)） |
