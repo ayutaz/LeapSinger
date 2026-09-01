@@ -35,6 +35,7 @@ sys.path.insert(0, str(ROOT))
 
 from leapsinger.config import MelSpec  # noqa: E402
 from tools.audio_metrics import band_profile, format_profiles  # noqa: E402
+from tools.svc_defaults import SVC_NUM_STEPS  # noqa: E402
 
 _TAG_SAFE = re.compile(r"[^\w-]")
 
@@ -60,7 +61,8 @@ def main() -> int:
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--manifest", required=True, help="target 話者の shard の manifest.json")
     ap.add_argument("--spk-id", type=int, default=0, help="変換先の speaker id")
-    ap.add_argument("--num-steps", type=int, default=1)
+    ap.add_argument("--num-steps", type=int, default=SVC_NUM_STEPS,
+                    help=f"flow の step 数（既定 {SVC_NUM_STEPS}。2026-09-01 の掃引で決定）")
     ap.add_argument("--transpose", type=float, default=0.0,
                     help="F0 を半音単位で移調する。男女をまたぐときに使う")
     ap.add_argument("--chunk-sec", type=float, default=20.0,

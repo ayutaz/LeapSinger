@@ -43,6 +43,7 @@ sys.path.insert(0, str(ROOT))
 
 from leapsinger.config import MelSpec  # noqa: E402
 from tools.audio_metrics import band_profile  # noqa: E402
+from tools.svc_defaults import SVC_NUM_STEPS  # noqa: E402
 
 
 def cos_per_frame(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -76,7 +77,8 @@ def main() -> int:
     ap.add_argument("--n-clips", type=int, default=8)
     ap.add_argument("--seconds", type=float, default=6.0)
     ap.add_argument("--min-voiced", type=float, default=0.3)
-    ap.add_argument("--num-steps", type=int, default=1)
+    ap.add_argument("--num-steps", type=int, default=SVC_NUM_STEPS,
+                    help=f"flow の step 数（既定 {SVC_NUM_STEPS}。2026-09-01 の掃引で決定）")
     ap.add_argument("--transpose", type=float, default=0.0,
                     help="F0 を半音単位で移調する。**content と loudness には触らない**。"
                          "上限（GT mel の再合成）も同じ F0 で鳴らすので、音高が違うことによる"

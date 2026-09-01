@@ -22,6 +22,12 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.svc_defaults import SVC_NUM_STEPS  # noqa: E402
+
 Job = dict[str, Any]
 
 
@@ -191,7 +197,8 @@ def main() -> int:
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--manifest", required=True)
     ap.add_argument("--spk-id", type=int, default=22)
-    ap.add_argument("--num-steps", type=int, default=1)
+    ap.add_argument("--num-steps", type=int, default=SVC_NUM_STEPS,
+                    help=f"flow の step 数（既定 {SVC_NUM_STEPS}。2026-09-01 の掃引で決定）")
     ap.add_argument("--chunk-sec", type=float, default=20.0,
                     help="この長さごとに分けて変換する。**svc_convert.py と同じ既定にする** "
                          "（違うと境界処理が変わり、同じ test set の中で条件が揃わない）")
@@ -244,6 +251,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    ROOT = Path(__file__).resolve().parent.parent
-    sys.path.insert(0, str(ROOT))
     raise SystemExit(main())

@@ -1149,3 +1149,48 @@ class FailureTaxonomyTests(unittest.TestCase):
         rows = [{"tag": "a", "categories": ["pitch"]}, {"tag": "b", "categories": ["pitch"]}]
         self.assertEqual(summarise(rows)["tags"]["pitch"], ["a", "b"])
 
+
+class SvcDefaultStepsTests(unittest.TestCase):
+    """SVC 推論の既定 step 数（2026-09-01 の掃引で決定）。
+
+    **SVC 経路だけを変えます。** 未知 source 20 clip の掃引で、事前登録した規則
+    （話者類似度を最大化、内容 cos の低下 0.02 以内、同点なら小さい step）が
+    **16** を選びました。回復率 58.9% -> 68.6%、内容 cos −0.019、flow 時間は 2.1 倍。
+
+    **SVS 経路（`infer_mel`）は触りません。** 今回の測定は SVC 経路のみで、SVS の
+    1 step 品質は別途検証済みだからです。**測っていない経路の既定を変えないこと。**
+    """
+
+    def test_svc_inference_defaults_to_the_chosen_steps(self):
+        import inspect
+
+        from infer import infer_svc_mel
+        from tools.svc_defaults import SVC_NUM_STEPS
+        self.assertEqual(
+            inspect.signature(infer_svc_mel).parameters["num_steps"].default, SVC_NUM_STEPS)
+
+    def test_the_chosen_value_is_what_the_sweep_selected(self):
+        from tools.svc_defaults import SVC_NUM_STEPS
+        self.assertEqual(SVC_NUM_STEPS, 16)
+
+    def test_the_svs_path_is_left_alone(self):
+        # SVS の既定を巻き込むと、測っていない経路の挙動を変えてしまう。
+        import inspect
+
+        from infer import infer_mel
+        self.assertEqual(inspect.signature(infer_mel).parameters["num_steps"].default, 10)
+
+    def test_the_svc_clis_use_the_same_default(self):
+        # ツールごとに既定が違うと、どの step で測ったのか分からなくなる。
+        import re
+        from pathlib import Path
+
+        from tools.svc_defaults import SVC_NUM_STEPS
+        for name in ("svc_convert.py", "svc_batch.py", "m3_verify.py"):
+            src = (Path(__file__).parent / "tools" / name).read_text(encoding="utf-8")
+            m = re.search(r'"--num-steps".*?default=(\w+)', src, re.S)
+            self.assertIsNotNone(m, f"{name} に --num-steps が無い")
+            self.assertEqual(m.group(1), "SVC_NUM_STEPS",
+                             f"{name} が既定を直書きしている（{m.group(1)}）")
+        self.assertEqual(SVC_NUM_STEPS, 16)
+

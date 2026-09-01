@@ -19,6 +19,7 @@ import torch
 
 from leapsinger.models.acoustic import HarmonicAcousticModel, HarmonicAcousticModelMultiSpk
 from leapsinger.models.svc import HarmonicSVCModel
+from tools.svc_defaults import SVC_NUM_STEPS
 
 
 def _build_from_config(cfg: dict, device):
@@ -90,7 +91,7 @@ def infer_mel(model, item: dict, num_steps: int = 10, device: str = "cpu", seed:
 
 
 @torch.no_grad()
-def infer_svc_mel(model, item: dict, num_steps: int = 1,
+def infer_svc_mel(model, item: dict, num_steps: int = SVC_NUM_STEPS,
                   device: str = "cpu", seed: int = 0):
     """Run a HarmonicSVCModel on one frame-aligned feature item.
 
@@ -98,6 +99,12 @@ def infer_svc_mel(model, item: dict, num_steps: int = 1,
     ``loudness`` [T]. Content encoder and pitch extractor execution deliberately
     live outside this function so the same contract can serve offline training
     and a future streaming frontend.
+
+    ``num_steps`` defaults to :data:`tools.svc_defaults.SVC_NUM_STEPS` (16), chosen by a
+    pre-registered rule over a 20-clip sweep: it recovers 58.9% -> 68.6% of the way toward
+    the target speaker for -0.019 content cosine, and the flow costs 2.1x rather than 16x
+    because most of the time is call overhead. The SVS path (:func:`infer_mel`) is
+    unchanged -- that route was not measured here.
     """
     if not isinstance(model, HarmonicSVCModel):
         raise TypeError("infer_svc_mel requires HarmonicSVCModel")
