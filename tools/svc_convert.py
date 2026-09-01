@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -35,6 +36,21 @@ sys.path.insert(0, str(ROOT))
 from leapsinger.config import MelSpec  # noqa: E402
 from tools.audio_metrics import band_profile, format_profiles  # noqa: E402
 
+_TAG_SAFE = re.compile(r"[^\w-]")
+
+
+def output_stem(wav_path: str, *, tag: str | None) -> str:
+    """出力ファイルの stem。**`tag` で区間を区別できるようにする。**
+
+    同じ WAV から `--start` を変えて 2 回変換すると、入力名だけでは衝突します。hold-out は
+    1 曲から複数区間を取るのでこれが実際に起きます。**黙って上書きされると clip 数が減る
+    だけで例外にならない**ので、呼び出し側が区別できる名前を渡せるようにします。
+    """
+    stem = Path(wav_path).stem
+    if not tag:
+        return stem
+    return f"{stem}__{_TAG_SAFE.sub('_', str(tag))}"
+
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
@@ -49,6 +65,9 @@ def main() -> int:
                     help="F0 を半音単位で移調する。男女をまたぐときに使う")
     ap.add_argument("--chunk-sec", type=float, default=20.0,
                     help="この長さごとに分けて変換する（長い曲のメモリ対策）")
+    ap.add_argument("--tag", default=None,
+                    help="出力名に付ける識別子。**同じ WAV から区間を変えて変換するときは必須**"
+                         "（付けないと前の結果を黙って上書きします）")
     ap.add_argument("--start", type=float, default=0.0, help="この秒数から")
     ap.add_argument("--seconds", type=float, default=0.0, help="この長さだけ（0 なら全部）")
     ap.add_argument("--peak-normalize", action="store_true",
@@ -134,7 +153,7 @@ def main() -> int:
     if not pieces:
         sys.exit("変換できる長さがありませんでした")
     conv = np.concatenate(pieces).astype(np.float32)
-    stem = Path(a.wav).stem
+    stem = output_stem(a.wav, tag=a.tag)
     sf.write(out_dir / f"{stem}_converted.wav", conv, mel.sr)
     # 試聴用の source は聴きやすさのために揃える（特徴抽出には使っていない）
     _p = float(np.abs(wav).max())

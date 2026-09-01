@@ -481,7 +481,7 @@ class TestSetTests(unittest.TestCase):
                   "full_seconds": 100.0, "kind": "holdout"}]
         got = segment_holdout(songs, n=4, seconds=20.0, seed=0)
         spans = sorted((c["start"], c["start"] + c["seconds"]) for c in got)
-        for (s1, e1), (s2, _) in zip(spans, spans[1:]):
+        for (_s1, e1), (s2, _s2) in zip(spans, spans[1:], strict=False):
             self.assertLessEqual(e1, s2, f"区間が重なっている: {spans}")
 
     def test_segments_are_spread_over_each_song(self):
@@ -528,4 +528,125 @@ class TestSetTests(unittest.TestCase):
                     "seconds": 20.0, "kind": "holdout"} for k in range(8)]
         ts = build_testset(unseen, holdout, n_unseen=20, n_holdout=6, seed=0)
         self.assertTrue(all(c["transpose"] == 0 for c in ts["holdout"]))
+
+
+class ConvertOutputNamingTests(unittest.TestCase):
+    """変換結果のファイル名（M5 で同じ曲から複数区間を取るため）。
+
+    **同じ WAV から区間を変えて 2 回変換すると、出力名が衝突します。** hold-out は 3 曲しか
+    なく、1 曲から 2 区間取るのでこれが実際に起きます。**黙って上書きされると clip 数が
+    減るだけで例外にならない**（GTSinger で 1,922 ファイルが 3 名に潰れたのと同じ形）。
+    """
+
+    def test_the_stem_defaults_to_the_input_filename(self):
+        from tools.svc_convert import output_stem
+        self.assertEqual(output_stem("download/ritsu/anywhere.wav", tag=None), "anywhere")
+
+    def test_a_tag_disambiguates_two_segments_of_one_song(self):
+        from tools.svc_convert import output_stem
+        a = output_stem("a/anywhere.wav", tag="seg0")
+        b = output_stem("a/anywhere.wav", tag="seg1")
+        self.assertNotEqual(a, b)
+
+    def test_the_tag_keeps_the_source_name_readable(self):
+        # 出力を見て、どの曲のどの区間かが分かること。
+        from tools.svc_convert import output_stem
+        self.assertIn("anywhere", output_stem("a/anywhere.wav", tag="seg1"))
+
+    def test_the_tag_is_sanitised_for_the_filesystem(self):
+        from tools.svc_convert import output_stem
+        got = output_stem("a/anywhere.wav", tag="seg/1 2")
+        for bad in r"/\ ":
+            self.assertNotIn(bad, got)
+
+
+class BlindPreferenceTests(unittest.TestCase):
+    """blind preference test の道具（M5 ゴール 3）。
+
+    **N=1 でも blind の条件は要ります。** ラベルを隠し、順序を randomize し、
+    どちらが A でどちらが B だったかを**後から復元できる**こと。復元できないと
+    集計そのものが成り立ちません。
+
+    **聴く前に答えが分かってはいけない**ので、割り当ては seed から決まりつつ、
+    提示側のファイル名からは system が読めない形にします。
+    """
+
+    def _pairs(self, n=4):
+        return [{"clip": f"c{i}", "a_system": "leapsvc", "b_system": "seedvc"}
+                for i in range(n)]
+
+    def test_each_pair_gets_a_random_side_assignment(self):
+        from tools.blind_test import assign_sides
+        got = assign_sides(["c0", "c1", "c2", "c3"], systems=("leapsvc", "seedvc"), seed=0)
+        self.assertEqual(len(got), 4)
+        for row in got:
+            self.assertEqual(sorted([row["A"], row["B"]]), ["leapsvc", "seedvc"])
+
+    def test_the_assignment_is_deterministic_for_a_seed(self):
+        from tools.blind_test import assign_sides
+        a = assign_sides(["c0", "c1"], systems=("x", "y"), seed=7)
+        b = assign_sides(["c0", "c1"], systems=("x", "y"), seed=7)
+        self.assertEqual(a, b)
+
+    def test_both_systems_appear_on_each_side_across_the_set(self):
+        # 常に A が LeapSVC だと、順序の癖が preference に化ける。
+        from tools.blind_test import assign_sides
+        got = assign_sides([f"c{i}" for i in range(20)], systems=("x", "y"), seed=0)
+        a_sides = [r["A"] for r in got]
+        self.assertGreater(a_sides.count("x"), 3)
+        self.assertGreater(a_sides.count("y"), 3)
+
+    def test_presentation_order_is_shuffled_not_the_clip_order(self):
+        # clip の並びも混ぜる。曲順で聴くと後半に慣れが出る。
+        from tools.blind_test import assign_sides
+        clips = [f"c{i}" for i in range(20)]
+        got = [r["clip"] for r in assign_sides(clips, systems=("x", "y"), seed=1)]
+        self.assertNotEqual(got, clips)
+        self.assertEqual(sorted(got), sorted(clips))
+
+    def test_tally_counts_votes_per_system_not_per_side(self):
+        from tools.blind_test import tally
+        sheet = [{"clip": "c0", "A": "x", "B": "y", "vote": "A"},
+                 {"clip": "c1", "A": "y", "B": "x", "vote": "A"},
+                 {"clip": "c2", "A": "x", "B": "y", "vote": "B"}]
+        got = tally(sheet)
+        self.assertEqual(got["wins"]["x"], 1)
+        self.assertEqual(got["wins"]["y"], 2)
+
+    def test_ties_are_kept_not_dropped(self):
+        # 引き分けを捨てると、差が無かったことが見えなくなる。
+        from tools.blind_test import tally
+        sheet = [{"clip": "c0", "A": "x", "B": "y", "vote": "tie"},
+                 {"clip": "c1", "A": "x", "B": "y", "vote": "A"}]
+        got = tally(sheet)
+        self.assertEqual(got["ties"], 1)
+        self.assertEqual(got["n_voted"], 2)
+
+    def test_an_unvoted_row_is_reported_not_silently_skipped(self):
+        from tools.blind_test import tally
+        sheet = [{"clip": "c0", "A": "x", "B": "y", "vote": ""},
+                 {"clip": "c1", "A": "x", "B": "y", "vote": "A"}]
+        got = tally(sheet)
+        self.assertEqual(got["n_missing"], 1)
+        self.assertEqual(got["n_voted"], 1)
+
+    def test_an_invalid_vote_is_rejected_rather_than_guessed(self):
+        from tools.blind_test import tally
+        with self.assertRaises(ValueError):
+            tally([{"clip": "c0", "A": "x", "B": "y", "vote": "leapsvc"}])
+
+    def test_the_sign_test_p_value_is_reported_with_n(self):
+        # N=1 の評価者なので、統計は「参考」。それでも n と p を出して読み手に判断させる。
+        from tools.blind_test import tally
+        sheet = [{"clip": f"c{i}", "A": "x", "B": "y", "vote": "A"} for i in range(10)]
+        got = tally(sheet)
+        self.assertEqual(got["n_decisive"], 10)
+        self.assertLess(got["p_two_sided"], 0.01)
+
+    def test_a_split_result_is_not_significant(self):
+        from tools.blind_test import tally
+        sheet = ([{"clip": f"a{i}", "A": "x", "B": "y", "vote": "A"} for i in range(5)]
+                 + [{"clip": f"b{i}", "A": "x", "B": "y", "vote": "B"} for i in range(5)])
+        got = tally(sheet)
+        self.assertGreater(got["p_two_sided"], 0.5)
 
