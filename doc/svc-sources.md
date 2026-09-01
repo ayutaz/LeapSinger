@@ -45,6 +45,7 @@
 | `out/m5/metrics_{leapsvc,seedvc}/*.json` | 両系の測定（pitch / timing / similarity / cer / signal_quality / failures / rtf） |
 | `out/m5/guard_rail.json` | 事前登録した判定の結果（**話者類似度で落ちた**） |
 | `out/m5/blind/` | blind preference の材料（26 ペア、system 名を隠したもの）。**未実施** |
+| `out/m5/probe{1..6}_*.json` | **話者性が弱い原因の調査**（層ごとの上限 / 漏れ / 話者条件 / mel の細部 / step 依存） |
 | [`doc/svc-content-encoder.md`](svc-content-encoder.md) / [`doc/svc-dataset-ledger.md`](svc-dataset-ledger.md) | encoder 選定と M0 台帳 |
 | [`pyproject.toml`](../pyproject.toml) / [`uv.lock`](../uv.lock) / `.python-version` | Python 3.13 固定、CUDA wheel index、依存の解決結果 |
 | [`CLAUDE.md`](../CLAUDE.md) | コマンド、共有スタック、データ契約、既知の落とし穴 |
