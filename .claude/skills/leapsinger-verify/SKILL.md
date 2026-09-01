@@ -20,6 +20,18 @@ uv run python tools/smoke/run_smoke.py
 
 これだけ。終了コードが失敗ステージ数なので、**0 以外なら先へ進まない**。所要は GPU で約 3 分。
 
+**smoke は評価ツールを踏みません。** 話者類似度・CER・信号品質・推論 RTF
+（`tools/speaker_*.py` / `asr_cer.py` / `signal_quality.py` / `rtf.py`）は
+**`uv sync --extra eval` を入れ忘れていても smoke は通ります**。評価を回す前に
+別途これを確認すること:
+
+```bash
+# **--extra は「これだけにする」指定。** 足す指定ではないので、必要なものを毎回すべて並べる
+# （eval だけを渡すと train / export / dev が消えます。実際に踏みました）
+uv sync --extra train --extra export --extra dev --extra eval
+uv run python -c "import speechbrain, torchaudio; print('eval extra OK')"
+```
+
 よく使う変種:
 
 ```bash

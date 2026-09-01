@@ -19,8 +19,8 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
 
 環境構築:
 
-    uv sync --extra train --extra export --extra dev   # 依存を .venv へ（推論のみなら uv sync）
-    uv sync --extra eval                       # 話者類似度の評価に使う ECAPA-TDNN（speechbrain）
+    uv sync --extra train --extra export --extra dev              # 依存を .venv へ（推論のみなら uv sync）
+    uv sync --extra train --extra export --extra dev --extra eval # 評価も回すとき（speechbrain / torchaudio）
     uv add <package>                           # 依存を足すときは常に uv add（pyproject にも記録される）
     uv add --optional train <package>          # extra に足すとき（train / export）
 
@@ -197,7 +197,7 @@ hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の 
 - 「世界初」「唯一」は使わない（rectified-flow SVC も harmonic modelling も先行研究がある）。
 - 「1-step」は acoustic flow の step 数であり、pipeline 全体の話ではない。
 
-現在の到達点は**完了レベル 3（実データ）**です。実音声から shard を作り、23 話者・約 18 時間の multi-singer base を **60,000 step** 学習し、そこから波音リツへ **20,000 step の fine-tune** まで実施しました（M0〜M4 完了）。**Seed-VC 比較（M5）、streaming student（M6）は未着手**です（`doc/svc-implementation-status.md` の検証済み / 未検証の境界を参照）。
+現在の到達点は**完了レベル 3（実データ）**です。実音声から shard を作り、23 話者・約 18 時間の multi-singer base を **60,000 step** 学習し、そこから波音リツへ **20,000 step の fine-tune** まで実施しました（M0〜M4 完了）。**M5（Seed-VC 比較）は客観指標の道具まで揃え、測定本番は未実施**です。**streaming student（M6）は未着手**です（`doc/svc-implementation-status.md` の検証済み / 未検証の境界を参照）。
 
 **M4 で分かった trade-off（実測）:** fine-tune を進めるほど **target らしさは上がり**（話者類似度の回復率 45.1% → 58.0%、自己再構成は上限比 94.8% → 98.1%）、**未知 source の内容保持は単調に落ちます**（cos 0.8599 → 0.8359）。config に事前登録した規則（未知 source の cos が base から 0.02 を超えて落ちた checkpoint は選ばない）で **`ckpt_010000` を選択**しました。train loss だけで選ぶと 20,000 step を選んでしまいます。
 
@@ -217,6 +217,9 @@ hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の 
 - **内容指標だけで音の劣化を判断しないこと。** 上の不具合で centroid が 620 → 368 Hz に落ちても、content cos は 0.8217 → 0.8096 としか動きませんでした。`tools/audio_metrics.py` の帯域指標を併せて見ます。
 - **phrase 名の衝突は例外になりません。** `preprocess.svc.run` は曲ごとの通し番号で採番し、衝突を検出したら止めます。この採番を「ファイルごとに 0 から」に戻すと、同じ曲名の別ファイルが cache を**黙って上書き**し、shard の phrase 数が減るだけになります（GTSinger で 1,922 ファイルが 3 名に潰れました）。
 - **曲名を ASCII に削らないこと。** `_SAFE` は `[^\w-]` なので CJK を残します。ASCII だけにすると日本語題の曲がすべて同じ名前になり、曲単位 split が効きません（1,922 中 1,723 件が潰れました）。曲名は casefold して表記ゆれ（`Heartful_Song` と `Heartful_song`）も畳んでいます。
+- **`uv sync --extra <名前>` は「これだけにする」指定です。** 足す指定ではありません。
+`uv sync --extra eval` だけを走らせると **train / export / dev が消えます**（実際に踏み、
+tensorboard・onnx・ruff が消えました）。**必要な extra を毎回すべて並べること。**
 - **M5 の客観指標は 4 つとも「上限との差」で読みます。** `tools/svc_convert.py --self-check` が
 出す `*_vocoder_only.wav`（GT mel をボコーダーに通した再合成）が上限で、`asr_cer.py` と
 `signal_quality.py` は**上限が無ければ実行を拒否**します。絶対値を品質として報告しないこと。
@@ -229,7 +232,8 @@ hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の 
 1 フレームでした。**これは「ほぼずれていない」ではなく測定限界**です。timing で読むべきは
 `matched_ratio`（実測 69.1%。onset の 3 割は対応が付かない）のほうです。
 - **RTF は段ごとに出します。** 実測（CPU・Windows・compile 無効）で acoustic のみ **0.081**、
-合計 **0.654** で、**最大の項はボコーダー（0.355）**でした。「1-step だから速い」は acoustic の
+合計 **0.654** で、**最大の項はボコーダー（0.355）**でした。**README の性能表（SVS 経路・
+Apple Silicon・ボコーダー < 0.1）とは機種も経路も違うので比較できません。**「1-step だから速い」は acoustic の
 話であって pipeline 全体ではありません。`realtime_capable` は `rtf_total < 1` を見ているだけで、
 chunk 境界も I/O 遅延も連続運転も見ていません。
 - **信号品質（SQUIM）は話し声で学習されています。** 歌声への妥当性は未検証なので、

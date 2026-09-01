@@ -192,9 +192,10 @@ model over 23 speakers / ~18 hours** has been pretrained for 60,000 steps (conte
 for an unseen source singer, measured), and that base has been **fine-tuned to a target singer
 for 20,000 steps**. Speaker similarity is now measurable: ECAPA-TDNN on clips of 12 s or longer passes our
 pre-registered singing calibration, and it shows the fine-tune does move the voice toward the
-target (recovery from the floor rises from 45.1% to 54.9%). **Quality evaluation, the Seed-VC
-comparison, and the real-time student are not done yet** -- intelligibility (CER), signal
-quality, timing, and inference RTF have no tooling here at all.
+target (recovery from the floor rises from 45.1% to 54.9%). Tooling for intelligibility (CER),
+signal quality, timing, and inference RTF exists as well, each reported only as a gap from the
+ceiling (ground-truth mel through the vocoder). **The measurement campaign itself, the Seed-VC
+comparison, and the real-time student are not done yet.**
 The Japanese research suite covering requirements, architecture, data/GPU, training,
 evaluation, prior art/licensing, implementation status, and sources is indexed at
 [doc/svc.md](doc/svc.md).
