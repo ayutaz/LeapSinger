@@ -375,3 +375,157 @@ class RtfTests(unittest.TestCase):
         self.assertEqual(len(calls), 3)
         self.assertEqual(out, 3)
 
+
+class TestSetTests(unittest.TestCase):
+    """M5 の test set を決定的に選ぶ（[実行計画](doc/svc-plan.md) M5「決定 4」）。
+
+    **手で選ぶと偏ります。** M3 の測り直しで、`rglob` の並び順のまま 20 clip を取ったら
+    **18 女性 / 2 男性**になりました。事前登録した構成（同性・異性の両方、日本語を含む、
+    12 秒以上、held-out song と未知 source の両方）を**コードで満たさせます**。
+
+    選択は seed から決定的に決まり、manifest に残せること。
+    """
+
+    def _pool(self, n_female=9, n_male=11, per_speaker=3):
+        return [{"speaker": f"{g}{i}", "gender": g, "clip": f"c{k}", "seconds": 20.0,
+                 "kind": "unseen"}
+                for g, n in (("female", n_female), ("male", n_male))
+                for i in range(1, n + 1) for k in range(per_speaker)]
+
+    def test_every_speaker_contributes_exactly_one_clip(self):
+        # VocalSet は女性 9 / 男性 11。全 20 名から 1 本ずつで n=20 になる。
+        from tools.m5_testset import select_clips
+        got = select_clips(self._pool(), n=20, seed=0)
+        self.assertEqual(len({c["speaker"] for c in got}), 20)
+
+    def test_both_genders_clear_the_floor(self):
+        # 性別で回復率の伸びが倍違うので、片方が少なすぎると差を読めない。
+        from tools.m5_testset import select_clips
+        got = select_clips(self._pool(), n=20, seed=0)
+        genders = [c["gender"] for c in got]
+        for g in ("female", "male"):
+            self.assertGreaterEqual(genders.count(g), 6, f"{g} が少なすぎる")
+
+    def test_selection_is_deterministic_for_a_seed(self):
+        from tools.m5_testset import select_clips
+        pool = self._pool()
+        a = [c["speaker"] + c["clip"] for c in select_clips(pool, n=20, seed=0)]
+        b = [c["speaker"] + c["clip"] for c in select_clips(pool, n=20, seed=0)]
+        self.assertEqual(a, b)
+
+    def test_a_different_seed_gives_a_different_set(self):
+        from tools.m5_testset import select_clips
+        pool = self._pool()
+        a = {c["speaker"] + c["clip"] for c in select_clips(pool, n=20, seed=0)}
+        b = {c["speaker"] + c["clip"] for c in select_clips(pool, n=20, seed=1)}
+        self.assertNotEqual(a, b)
+
+    def test_clips_shorter_than_the_calibrated_length_are_dropped(self):
+        # 話者類似度の較正は 12 秒以上でしか通らない。短い clip を入れると測れなくなる。
+        from tools.m5_testset import select_clips
+        pool = self._pool()
+        for c in pool:
+            c["seconds"] = 6.0
+        with self.assertRaises(ValueError):
+            select_clips(pool, n=20, seed=0)
+
+    def test_no_speaker_appears_twice(self):
+        # 1 人から複数取ると、その歌手の癖が test set を支配する。
+        from tools.m5_testset import select_clips
+        got = select_clips(self._pool(), n=20, seed=0)
+        counts = {}
+        for c in got:
+            counts[c["speaker"]] = counts.get(c["speaker"], 0) + 1
+        self.assertLessEqual(max(counts.values()), 1)
+
+    def test_it_refuses_when_there_are_not_enough_speakers(self):
+        # 足りないなら黙って 1 人から 2 本取らず、止める。
+        from tools.m5_testset import select_clips
+        with self.assertRaises(ValueError):
+            select_clips(self._pool(n_female=5, n_male=5, per_speaker=4), n=20, seed=0)
+
+    def test_it_refuses_a_set_that_is_lopsided_by_gender(self):
+        # M3 では 18 女性 / 2 男性の set で「男性 source が暗い」を取り逃がした。
+        # 素材が偏っているなら、黙って偏った set を返さずに止める。
+        from tools.m5_testset import select_clips
+        with self.assertRaises(ValueError):
+            select_clips(self._pool(n_female=18, n_male=2, per_speaker=1), n=20, seed=0)
+
+    def test_target_holdout_clips_are_kept_separate_from_unseen(self):
+        # ゴール 1 は held-out song と未知 source singer の**両方**を要求する。
+        from tools.m5_testset import build_testset
+        unseen = self._pool()
+        holdout = [{"speaker": "ritsu", "gender": "female", "clip": f"h{k}",
+                    "seconds": 20.0, "kind": "holdout"} for k in range(8)]
+        ts = build_testset(unseen, holdout, n_unseen=20, n_holdout=6, seed=0)
+        self.assertEqual(len(ts["unseen"]), 20)
+        self.assertEqual(len(ts["holdout"]), 6)
+        self.assertTrue(all(c["kind"] == "holdout" for c in ts["holdout"]))
+
+    def test_holdout_takes_several_segments_from_one_long_song(self):
+        # hold-out 曲は 3 曲しかないが 1 曲 3〜5 分ある。曲単位 split を保ったまま
+        # 区間を分けて 6 clip にする。**別の曲を混ぜて水増ししない。**
+        from tools.m5_testset import segment_holdout
+        songs = [{"speaker": "ritsu", "gender": "female", "song": "a", "path": "a.wav",
+                  "full_seconds": 280.0, "kind": "holdout"},
+                 {"speaker": "ritsu", "gender": "female", "song": "b", "path": "b.wav",
+                  "full_seconds": 200.0, "kind": "holdout"}]
+        got = segment_holdout(songs, n=4, seconds=20.0, seed=0)
+        self.assertEqual(len(got), 4)
+        self.assertEqual(sorted({c["song"] for c in got}), ["a", "b"])
+
+    def test_segments_from_the_same_song_do_not_overlap(self):
+        # 同じ区間を 2 回測ると n を水増ししただけになる。
+        from tools.m5_testset import segment_holdout
+        songs = [{"speaker": "ritsu", "gender": "female", "song": "a", "path": "a.wav",
+                  "full_seconds": 100.0, "kind": "holdout"}]
+        got = segment_holdout(songs, n=4, seconds=20.0, seed=0)
+        spans = sorted((c["start"], c["start"] + c["seconds"]) for c in got)
+        for (s1, e1), (s2, _) in zip(spans, spans[1:]):
+            self.assertLessEqual(e1, s2, f"区間が重なっている: {spans}")
+
+    def test_segments_are_spread_over_each_song(self):
+        # 曲頭に固まるとイントロばかりになる（無声率が高く、変換の検証に向かない）。
+        from tools.m5_testset import segment_holdout
+        songs = [{"speaker": "ritsu", "gender": "female", "song": "a", "path": "a.wav",
+                  "full_seconds": 300.0, "kind": "holdout"}]
+        got = segment_holdout(songs, n=3, seconds=20.0, seed=0)
+        self.assertGreater(max(c["start"] for c in got), 100.0)
+
+    def test_it_refuses_a_song_too_short_to_yield_its_share(self):
+        from tools.m5_testset import segment_holdout
+        songs = [{"speaker": "ritsu", "gender": "female", "song": "a", "path": "a.wav",
+                  "full_seconds": 25.0, "kind": "holdout"}]
+        with self.assertRaises(ValueError):
+            segment_holdout(songs, n=4, seconds=20.0, seed=0)
+
+    def test_the_manifest_records_the_seed_and_the_rule(self):
+        # 後から「なぜこの 20 本か」を復元できないと、比較の土台が消える。
+        from tools.m5_testset import build_testset
+        unseen = self._pool()
+        holdout = [{"speaker": "ritsu", "gender": "female", "clip": f"h{k}",
+                    "seconds": 20.0, "kind": "holdout"} for k in range(8)]
+        ts = build_testset(unseen, holdout, n_unseen=20, n_holdout=6, seed=3)
+        self.assertEqual(ts["manifest"]["seed"], 3)
+        self.assertEqual(ts["manifest"]["min_seconds"], 12.0)
+        self.assertEqual(ts["manifest"]["n_unseen"], 20)
+
+    def test_transpose_is_assigned_by_gender_not_left_to_the_operator(self):
+        # 男性 source を移調し忘れると、モデルではなく音域差を測ることになる。
+        from tools.m5_testset import build_testset
+        unseen = self._pool()
+        holdout = [{"speaker": "ritsu", "gender": "female", "clip": f"h{k}",
+                    "seconds": 20.0, "kind": "holdout"} for k in range(8)]
+        ts = build_testset(unseen, holdout, n_unseen=20, n_holdout=6, seed=0)
+        for c in ts["unseen"]:
+            self.assertEqual(c["transpose"], 12 if c["gender"] == "male" else 0)
+
+    def test_holdout_clips_are_never_transposed(self):
+        # target 自身の曲は音域が合っている。移調すると別の実験になる。
+        from tools.m5_testset import build_testset
+        unseen = self._pool()
+        holdout = [{"speaker": "ritsu", "gender": "female", "clip": f"h{k}",
+                    "seconds": 20.0, "kind": "holdout"} for k in range(8)]
+        ts = build_testset(unseen, holdout, n_unseen=20, n_holdout=6, seed=0)
+        self.assertTrue(all(c["transpose"] == 0 for c in ts["holdout"]))
+
