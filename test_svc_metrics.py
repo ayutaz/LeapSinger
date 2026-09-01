@@ -1194,3 +1194,43 @@ class SvcDefaultStepsTests(unittest.TestCase):
                              f"{name} が既定を直書きしている（{m.group(1)}）")
         self.assertEqual(SVC_NUM_STEPS, 16)
 
+
+class SvcGanSmokeTests(unittest.TestCase):
+    """SVC 経路の GAN 配線が smoke で踏まれること。
+
+    **GAN 付き SVC は一度も動かしていない経路です。** smoke は SVS 側の GAN しか踏んで
+    おらず、SVC は `gan.enabled: false` のままでした。**vast.ai で数時間を投じる前に、
+    配線が通ることを手元で確かめます。**
+
+    ここでは smoke の構成だけを検査します（実際の学習は smoke 本体が回す）。
+    """
+
+    def _smoke_src(self):
+        from pathlib import Path
+        return (Path(__file__).parent / "tools" / "smoke" / "run_smoke.py").read_text(
+            encoding="utf-8")
+
+    def test_a_gan_enabled_svc_config_is_written(self):
+        # svc.yaml とは別に、GAN を有効にした config を書くこと。
+        src = self._smoke_src()
+        self.assertIn("svc_gan.yaml", src)
+
+    def test_the_svc_gan_config_turns_gan_on(self):
+        src = self._smoke_src()
+        self.assertRegex(src, r'svc_gan\["gan"\]\.update\([^)]*enabled=True')
+
+    def test_the_gan_starts_early_enough_for_a_short_smoke(self):
+        # gan_start_step が既定の 2000 のままだと、20 step の smoke では GAN 経路を
+        # 一度も通らずに「通った」ことになる。
+        src = self._smoke_src()
+        self.assertRegex(src, r'svc_gan\["gan"\]\.update\([^)]*gan_start_step=\d')
+
+    def test_there_is_a_stage_running_svc_with_gan(self):
+        src = self._smoke_src()
+        self.assertIn("svc-train-gan", src)
+
+    def test_the_stage_is_registered_in_the_stage_list(self):
+        # 関数を書いても一覧に足さなければ走らない。
+        src = self._smoke_src()
+        self.assertRegex(src, r'\("svc-train-gan",\s*st_svc_train_gan')
+

@@ -1,0 +1,108 @@
+# 条件付きトラック (C'): target fine-tune を **GAN 有効**で行う（doc/svc-plan.md）。
+#
+# M4 の svc_target_ft.yaml と**同じ構造・同じ base・同じ素材**で、GAN だけを足したものです。
+# 差分を GAN に限るために、lr / max_updates / batch / save_interval は動かしていません。
+#
+#   uv run python -m train --config configs/svc_target_ft_gan.yaml \
+#     --data_dirs data/ritsu data/ritsu_normal data/ritsu_soft \
+#     --run_name svc_ritsu_ft_gan_01 --out_root log --device cuda \
+#     --init_from <base>/ckpt_060000.pt --finetune
+#
+# **なぜ GAN を入れるか。** M5 の調査で、話者性が弱い原因は**過平滑**だと特定しました
+# （予測 mel のラプラシアン分散比 0.755 = 細部が 25% 欠ける）。切り分けの結果、
+# ボコーダーと mel 表現は無罪（自己再構成で 96.4% 保つ）、source 話者の漏れも無し
+# （下限に張り付く）、話者条件も機能（target 指定で 0.24 -> 0.52）でした。
+# **base も M4 の fine-tune も flow 損失 + 再構成損失のみ**で、これは過平滑を生む
+# 典型的な設定です。
+#
+# **M4 の config には「GAN は入れません。F0 依存の傾斜は GAN では直らない」と
+# 書きましたが、それは別の問題（明るさが入力 F0 に従うこと）についての判断でした。**
+# 今回対処するのは**細部の欠落**で、そちらは GAN が効く対象です。
+#
+# **事前登録した判定規則（学習の前に決定。doc/svc-plan.md 条件付きトラック C'）:**
+#   主要な判定: 未知 source の話者類似度（M5 と同じ test set / ECAPA / 12 秒以上）
+#   成功の条件: ckpt_010000 + 16 step の 0.4910 を上回る
+#   制約 1   : 未知 source の content cos が 0.02 を超えて落ちない
+#   制約 2   : F0 相関が 0.99 を下回らない（GAN は音程を壊すことがある。現状 0.9995）
+#   選び方   : 上を満たすもののうち話者類似度が最大。**train loss で選ばない**
+#   失敗判定 : 満たす checkpoint が 1 つも無ければ A は失敗とし、B へ進むかを再検討する
+#
+# **細部比も記録しますが判定には使いません。** num_steps の掃引で、細部比が 1.0 を
+# 超えても話者性は頭打ちになると分かっています（8 step 以降 1.05〜1.13）。
+# **細部の量は目的ではありません。**
+mel:
+  sr: 44100
+  hop: 256
+  n_fft: 2048
+  win: 2048
+  n_mels: 128
+  fmin: 40.0
+  fmax: 16000.0
+model:
+  arch: svc
+  content_dim: 256          # base と一致させること（ContentVec 768 の部分集合、seed 0）
+  content_layers: 2
+  content_dropout: 0.1
+  hidden: 256
+  backbone_ch: 256
+  n_cycles: 3
+  dilation_schedule: pow2_15
+  n_speakers: 23            # **base と同じ。** 構造が変わると --init_from が使えない
+  spk_dim: 32
+  n_styles: 0
+  use_uv: true
+  flow_loss: l2
+  mel_vmin: -11.5
+  mel_vmax: 2.0
+excitation:
+  n_harm: 256
+  noise_ratio: 0.05
+  exc_scale: 0.15
+  harm_decay: 1.0
+train:
+  lr: 2.0e-4                # M4 と同じ。**差分を GAN だけに保つ**
+  grad_clip: 1.0
+  optimizer: radam
+  max_updates: 20000
+  max_batch_frames: 30000
+  max_batch_size: 16
+  recon_weight: 0.5
+  flow_loss: l2
+  num_steps: 1
+  save_interval: 2500       # 未知 source の指標で後から選べるよう細かく残す
+  log_interval: 50
+  eval_interval: 2500
+  eval_items: 3             # 話者ごとの本数。target 1 人なので 3 サンプル
+  vocoder: checkpoints/nhv_v3.onnx
+  num_workers: 4
+  pitch_aug: false          # SVC では使えない。train.py が SystemExit する
+  balance_speakers: true
+# GAN の設定は SVS 側で実績のある 3singer_ritsu3style_uv_gan2d.yaml を土台にしています。
+# **gan_start_step を 0 にしません** - discriminator を暖機してから adversarial を
+# 立ち上げる二段構成が SVS で機能しているためです。fine-tune は 20,000 step しかないので、
+# SVS の 20,000 より早い 2,000 step から始めます（残り 18,000 step で効かせる）。
+gan:
+  enabled: true
+  d_type: mel2d             # 2D mel discriminator
+  d_spectral_norm: true     # spectral norm on every conv（学習を安定させる）
+  cond: speaker             # discriminator も話者で条件づける
+  d_lr: 2.0e-4
+  d_betas: [0.5, 0.9]
+  window: 64
+  adv_weight: 1.0
+  fm_dynamic: false
+  fm_weight: 2.0
+  gan_start_step: 2000      # ここまでは flow + recon のみ（SVS は 20,000 だが fine-tune は短い）
+  d_warmup_steps: 1000      # discriminator を先に暖機する
+  gan_ramp_steps: 2000      # adversarial を 0 -> 1 へ徐々に
+  d_gate_floor: 0.3
+  adaptive_adv: true
+  gan_strength: 0.5         # 安定していれば上げ、発散するなら下げる
+  grad_cap: 1.0
+data:
+  eval_songs: 3             # 波音リツは 75 曲あるので曲単位 hold-out が取れる
+  min_sec: 0.3
+  spk_map:                  # base と同じ id を維持する（3 音源とも同一話者）
+    ritsu: 22
+    ritsu_normal: 22
+    ritsu_soft: 22

@@ -65,6 +65,16 @@ def write_configs(work: Path, device: str) -> None:
     svc["data"]["eval_songs"] = 1
     (work / "svc.yaml").write_text(yaml.safe_dump(svc, sort_keys=False), encoding="utf-8")
 
+    # **GAN 付き SVC は未検証経路**（base も M4 も gan.enabled: false だった）。
+    # 短い smoke でも GAN 経路を必ず通るよう、開始と暖機を前倒しする。
+    svc_gan = load("svc_target_ft_gan.yaml")
+    svc_gan["model"].update(n_speakers=1)
+    svc_gan["train"].update(**fast, max_batch_frames=30000, max_batch_size=8)
+    svc_gan["gan"].update(enabled=True, gan_start_step=5, d_warmup_steps=2, gan_ramp_steps=2)
+    svc_gan["data"] = {"eval_songs": 1, "min_sec": 0.3, "spk_map": {"svc_target": 0}}
+    (work / "svc_gan.yaml").write_text(yaml.safe_dump(svc_gan, sort_keys=False),
+                                       encoding="utf-8")
+
     svs = load("3speaker_gan2d.yaml")
     svs["model"].update(n_speakers=1, hidden=128, backbone_ch=128)
     svs["train"].update(**fast, max_batch_frames=30000, max_batch_size=8)
@@ -117,6 +127,13 @@ def st_svc_train(w: Path, dev: str) -> str:
     need(out, "model harmonic_svc", "SVC モデル構築")
     need(out, "ckpt_000020.pt", "checkpoint 保存")
     return "SVC 20 step + ckpt"
+
+
+def st_svc_train_gan(w: Path, dev: str) -> str:
+    """SVC を **GAN 有効**で回す。`gan.enabled: false` でしか動かしていない経路。"""
+    out = _train(w, "svc_gan.yaml", "data/svc_target", "svc_gan", dev, 20)
+    need(out, "step", "svc-train-gan")
+    return "SVC 20 step (GAN on)"
 
 
 def st_svc_resume(w: Path, dev: str) -> str:
@@ -222,6 +239,7 @@ STAGES = [
     ("libs", st_libs, "3rd-party API（librosa/scipy/onnxruntime/matplotlib/TB）"),
     ("gen", st_gen, "合成データ生成"),
     ("svc-train", st_svc_train, "SVC 学習"),
+    ("svc-train-gan", st_svc_train_gan, "SVC 学習（GAN 有効。未検証経路）"),
     ("svc-resume", st_svc_resume, "SVC 自動再開（torch.load 既定）"),
     ("svc-infer", st_svc_infer, "SVC 推論 -> mel -> WAV"),
     ("svc-pp", st_svc_pp, "SVC 前処理 CLI（2 段目・bit 一致・loader）"),

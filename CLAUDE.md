@@ -132,7 +132,7 @@ ONNX / OpenUTAU 書き出し（SVS のみ。実験的）:
 
 yaml は `mel` / `model` / `excitation` / `train` / `gan` / `data` の 6 セクションです。`mel` は `MelSpec`（`leapsinger/config.py`）として前処理・loader・励起 hop で共有され、常に一致している必要があります（44.1 kHz / hop 256 / n_fft 2048 / 128 mel / 40–16000 Hz、NHVSing V3 互換）。
 
-`configs/.gitignore` は top-level の `configs/*.yaml` を無視し、`3speaker_gan2d.yaml` / `3singer_ritsu3style_uv_gan2d.yaml` / `svc_base.yaml` / `svc_base_multi.yaml` / `svc_target_ft.yaml` の 5 つだけを公開対象にしています。新しい config を追加してもコミット対象にならない点に注意。
+`configs/.gitignore` は top-level の `configs/*.yaml` を無視し、`3speaker_gan2d.yaml` / `3singer_ritsu3style_uv_gan2d.yaml` / `svc_base.yaml` / `svc_base_multi.yaml` / `svc_target_ft.yaml` / `svc_target_ft_gan.yaml` の 6 つだけを公開対象にしています。新しい config を追加してもコミット対象にならない点に注意。
 
 `svc_target_ft.yaml`（M4 の target fine-tune）は **header に checkpoint 選択規則を書いてから**走らせた config です。実験の後に規則を決めると train loss で選んでしまうので、この順序自体が成果物の一部です。
 
