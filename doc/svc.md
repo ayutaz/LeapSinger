@@ -105,5 +105,5 @@ M5 が要求する客観指標の道具も 4 つとも作りました（timing /
 1. **実装レベル** — モデル、loader、学習・評価・推論配線が存在する。**現在到達**。
 2. **合成 smoke レベル** — 人工テンソルで shape、padding、checkpoint、forward/inference を確認する。**現在到達**。
 3. **実データレベル** — 再現可能な前処理で実音声 shard を作り、学習して WAV を生成する。**現在到達**（2026-08-30、M2）。
-4. **品質比較レベル** — held-out song と未知 source singer で Seed-VC を含む blind comparison を完了する。**未到達**（M4 で offline teacher の候補は得たが、blind comparison も話者類似度の測定手段も無い）。
+4. **品質比較レベル** — held-out song と未知 source singer で Seed-VC を含む blind comparison を**完了する**。**勝つことは条件ではありません**（品質を外部基準に対して言えるようになった状態を指します）。**未到達**（2026-09-01 時点で offline teacher・測定手段・判定規則は揃い、**比較そのものが未実施**）。
 5. **リアルタイムレベル** — 実機で chunk 境界、RTF、lookahead、総遅延を測り、連続運転する。**未到達**。
