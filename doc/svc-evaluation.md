@@ -42,12 +42,12 @@ target singer の train 曲、同一 take、近重複 clip は test から除外
 |---|---|---|
 | pitch 保持 | F0 correlation、F0 RMSE、V/UV error | extractor 自身の誤りを別途監査する |
 | target similarity | speaker embedding cosine / SECS | **ECAPA-TDNN を 12 秒以上のクリップで使う**（下記の較正表）。encoder と長さの**両方**が要る |
-| intelligibility | CER / phoneme error | 日本語歌唱 ASR の bias を明記する |
-| signal quality | SIG / BAK / OVRL、DNSMOS 系 | music/singing への妥当性を過信しない |
+| intelligibility | CER（[`tools/asr_cer.py`](../tools/asr_cer.py)） | **`--language` を素材に合わせること**（VocalSet に `ja` を当てて全滅した）。**上限が判別不能なら差を出さない** |
+| signal quality | SQUIM の STOI / PESQ / SI-SDR（[`tools/signal_quality.py`](../tools/signal_quality.py)） | **話し声で学習されている。** 絶対値ではなく上限との差だけを読む |
 | spectral | mel/STFT distance、MCD | parallel reference がある subset に限定 |
 | **音の明るさ** | **spectral centroid、帯域エネルギー比**（[`tools/audio_metrics.py`](../tools/audio_metrics.py)） | **source ではなく「GT mel をボコーダーに通した再合成」を上限の基準にする。** 内容・音高・V/UV の指標は高域の欠落を検知しない（M3 で実測） |
-| timing | onset/offset deviation | source preservation の確認 |
-| compute | RTF、peak VRAM、model size | feature extraction と vocoder を含む/除くを併記 |
+| timing | onset のずれと**対応が付いた割合**（[`tools/timing_metrics.py`](../tools/timing_metrics.py)） | **ずれの分解能は hop（5.8 ms）。** 実測でずれは限界以下だったので `matched_ratio` を読む |
+| compute | 段別 RTF、peak VRAM（[`tools/rtf.py`](../tools/rtf.py)） | **段ごとに分解する。** 実測で最大の項はボコーダー（合計 0.654 中 0.355）、acoustic は 0.081 |
 | streaming | algorithmic latency、end-to-end latency、boundary error | 実機 audio I/O で測る |
 
 一つの総合点へ早期に集約せず、pitch・内容・target similarity・artifact・latency を別軸で報告します。
@@ -85,22 +85,59 @@ target singer の train 曲、同一 take、近重複 clip は test から除外
 
 **確認済み（2026-08-30、M3）: 内容指標は音の劣化を検知しません。** 推論条件の不具合で spectral centroid が 620 → 368 Hz へ落ちたとき、content cos は 0.8217 → 0.8096 としか動かず、F0 相関も V/UV もほぼ無反応でした。**耳で「こもっている」と分かる差です。** 内容・音高の指標が揃って良いことを音質の根拠にしないでください。
 
-### M5 に入る前の棚卸し（2026-09-01）
+### M5 の客観指標: 道具は 4 つとも作りました（2026-09-01）
 
-**確認済み:** [実行計画](svc-plan.md) M5 ゴール 2 が挙げる指標のうち、**道具があるのは半分**です。
-M5 は「測る」工程なので、無い指標は M5 の中で作ることになります。**先に把握しておくための表**です。
+**確認済み:** [実行計画](svc-plan.md) M5 ゴール 2 が挙げる指標について、道具が無かった 4 つを
+実装しました。**どれも「上限（GT mel をボコーダーに通した再合成）との差」で読む形**にして
+あります。上限は [`svc_convert.py`](../tools/svc_convert.py) の `--self-check` が
+`*_vocoder_only.wav` として出します。
 
 | M5 が要求する指標 | 道具 | 状態 |
 |---|---|---|
 | F0 correlation / RMSE | [`m3_verify.py`](../tools/m3_verify.py)（`f0_corr` / `median_semitones`） | **ある** |
 | V/UV error | 同上（`uv_agree`） | **ある** |
-| 内容保持（明瞭度の代理） | 同上（`content_cos` を上限・下限つきで） | **ある** |
-| 音の明るさ・帯域 | [`audio_metrics.py`](../tools/audio_metrics.py) + 上限（GT mel 再合成） | **ある** |
-| speaker similarity | [`speaker_similarity.py`](../tools/speaker_similarity.py) + [較正](../tools/speaker_calibrate.py) | **ある**（2026-09-01 に較正通過） |
-| **CER / 音素誤り** | — | **無い。** 日本語歌唱 ASR が要る（依存の追加。bias の明記も要る） |
-| **信号品質（DNSMOS 系）** | — | **無い。** 歌声への妥当性そのものが要検討 |
-| **timing（onset/offset ずれ）** | — | **無い** |
-| **RTF / peak VRAM（推論時）** | — | **無い。** 学習側の peak VRAM は測ってあるが、推論の RTF は未測定 |
+| 内容保持 | 同上（`content_cos` を上限・下限つきで） | **ある** |
+| 音の明るさ・帯域 | [`audio_metrics.py`](../tools/audio_metrics.py) + 上限 | **ある** |
+| speaker similarity | [`speaker_similarity.py`](../tools/speaker_similarity.py) + [較正](../tools/speaker_calibrate.py) | **ある**（較正通過） |
+| **timing** | [`timing_metrics.py`](../tools/timing_metrics.py) | **作った**（下記の限界に注意） |
+| **CER（明瞭度）** | [`asr_cer.py`](../tools/asr_cer.py) | **作った**（日本語素材でのみ機能） |
+| **信号品質** | [`signal_quality.py`](../tools/signal_quality.py) | **作った**（歌声への妥当性は未検証） |
+| **推論 RTF / peak VRAM** | [`rtf.py`](../tools/rtf.py) | **作った** |
+
+#### 実測で分かった各指標の限界（M5 で読むときの前提）
+
+**timing のずれは測定限界以下でした。** 分解能は hop（44.1 kHz / 256 で **5.8 ms**）で、
+M4 の ft10000・6 clip で**ずれの中央値がちょうど 5.8 ms = 1 フレーム**でした。**これを
+「ほぼずれていない」と読まないこと。** 読むべきは **`matched_ratio`（実測 69.1%）**で、
+**onset の 3 割は対応が付いていません**（消失・増加）。
+
+**CER は ASR の言語が素材と一致していないと全滅します。** VocalSet はイタリア語
+（Caro mio ben）・英語・ラテン語の楽曲で、`--language ja` を強制したところ source・変換・
+上限がすべて別物に書き起こされ、**CER は 3 clip とも 1.0** になりました。このとき**差は 0.0 に
+なり、「音響モデルは劣化させていない」と読めてしまいます。** そのため上限 CER が 0.5 を
+超えたら `ceiling_unusable` を立て、差を出さないようにしました。
+
+**日本語素材では機能します。** 波音リツの自己再構成 1 clip で **上限 0.0 / 変換 0.60**
+（差 +0.60）。上限が 0.0 ということはボコーダーと ASR は無罪で、**差はすべて音響モデルに
+帰属します。n=1 なので幅は読まないこと。**
+
+**信号品質（SQUIM）は話し声で学習されています。** 歌声への妥当性は未検証なので、**絶対値を
+音質として主張しません。** 上限との差だけを読みます（実測で 2 clip、`stoi` −0.118 / −0.066）。
+
+**RTF は段ごとに出します。** 実測（CPU / Windows / `torch.compile` 無効 / 10 秒 / 3 回の中央値）:
+
+| 段 | RTF |
+|---|---:|
+| content（ContentVec） | 0.081 |
+| f0（RMVPE） | 0.136 |
+| **flow（LeapSVC 本体）** | **0.081** |
+| **vocoder（NHVSing）** | **0.355** |
+| **合計** | **0.654** |
+
+**最大の項はボコーダーです。** 「1-step だから速い」は `rtf_acoustic_only` の話であって
+pipeline 全体ではありません（[主張ルール](svc-prior-art-license.md) 6 節）。`realtime_capable`
+は `rtf_total < 1` を見ているだけで、chunk 境界も audio I/O も連続運転も見ていません。
+**この旗だけで「リアルタイム」と書かないこと。**
 
 **注意:** `content_cos` は明瞭度の代理であって CER ではありません。M3 で、耳で分かる劣化
 （centroid 620 → 368 Hz）に対して content cos は 0.8217 → 0.8096 としか動きませんでした。

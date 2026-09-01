@@ -37,6 +37,9 @@
 | [`tools/speaker_similarity.py`](../tools/speaker_similarity.py) / [`tools/speaker_calibrate.py`](../tools/speaker_calibrate.py) | 話者類似度の枠組みと、**歌声での較正**（module docstring に較正表。合格条件は事前登録） |
 | `out/calib_{xvector,xvector_12s,ecapa,ecapa_12s,ecapa_20s}.json` | 較正の一次データ（encoder 2 本 × クリップ長 3 通り、VocalSet 20 歌手） |
 | `out/sim/report_{base,ft10000,ft20000}.json` と `out/sim/breakdown.json` | M4 ゴール 2 の話者類似度（未知 source 6 clip、上限・下限つき、性別内訳） |
+| [`tools/timing_metrics.py`](../tools/timing_metrics.py) / [`tools/asr_cer.py`](../tools/asr_cer.py) / [`tools/signal_quality.py`](../tools/signal_quality.py) / [`tools/rtf.py`](../tools/rtf.py) | M5 の客観指標 4 つ。**各 docstring に実測の限界**（分解能・言語依存・話し声モデル・段別 RTF） |
+| `out/{rtf_cpu,cer_ja,cer_ft10000,sq_ft10000,timing_ft10000}.json` | 上記 4 指標の動作確認の一次データ（**測定本番ではない**） |
+| [`test_svc_metrics.py`](../test_svc_metrics.py) | 4 指標の契約テスト 44 件 |
 | [`doc/svc-content-encoder.md`](svc-content-encoder.md) / [`doc/svc-dataset-ledger.md`](svc-dataset-ledger.md) | encoder 選定と M0 台帳 |
 | [`pyproject.toml`](../pyproject.toml) / [`uv.lock`](../uv.lock) / `.python-version` | Python 3.13 固定、CUDA wheel index、依存の解決結果 |
 | [`CLAUDE.md`](../CLAUDE.md) | コマンド、共有スタック、データ契約、既知の落とし穴 |

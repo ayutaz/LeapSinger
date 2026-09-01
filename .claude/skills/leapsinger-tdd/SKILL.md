@@ -10,7 +10,7 @@ description: このリポジトリで実装を書くときの TDD の当て方�
 ## 1. テストの置き場と実行
 
 ```bash
-uv run python -m unittest test_svc_model test_svc_preprocess test_svc_dataset -v   # 単体 234 件
+uv run python -m unittest test_svc_model test_svc_preprocess test_svc_dataset test_svc_metrics -v   # 単体 278 件
 uv run python -m unittest test_svc_model.HarmonicSVCModelTests.test_single_item_inference_contract
 uv run python tools/hooks/test_guard.py                      # hook の回帰 51 件
 LEAPSINGER_INTEGRATION=1 uv run python -m unittest test_svc_preprocess_integration   # 実モデル
@@ -22,6 +22,7 @@ uv run python tools/smoke/run_smoke.py                       # 全経路（実�
 | `test_svc_model.py` | モデル・loader・配線・**`train.py` の純粋関数**（`_loader_kwargs` / `perf_snapshot`） |
 | `test_svc_preprocess.py` | 整列 / 部分集合 / loudness / shard / 抽出 / chunk / **phrase 命名と衝突** / **分量選択**（M1・M3） |
 | `test_svc_dataset.py` | 検査 / coverage / split / report（M0）/ **GTSinger の wav 選択**（M3） |
+| `test_svc_metrics.py` | M5 の客観指標（timing / CER / 信号品質 / 推論 RTF）。**ASR と採点器は引数で受け取る** |
 | `test_svc_preprocess_integration.py` | **実 ContentVec / RMVPE。既定 skip**、`LEAPSINGER_INTEGRATION=1` で走る |
 
 - top-level の `test_<領域>.py` に置く。`unittest discover` は top-level の `test_*.py` しか拾わないので、

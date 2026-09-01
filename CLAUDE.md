@@ -76,6 +76,7 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
     uv run python -m unittest test_svc_model -v
     uv run python -m unittest test_svc_preprocess -v  # SVC 特徴抽出前処理（重いモデル不要）
     uv run python -m unittest test_svc_dataset -v     # M0 の素材検査・split・音域集計
+    uv run python -m unittest test_svc_metrics -v     # M5 の客観指標（timing / CER / 信号品質 / RTF）
     LEAPSINGER_INTEGRATION=1 uv run python -m unittest test_svc_preprocess_integration -v  # 実モデル（既定は skip）
     uv run python -m unittest test_svc_model.HarmonicSVCModelTests.test_forward_and_infer_reuse_flow_with_svc_conditioning
     uv run python tools/hooks/test_guard.py    # コマンド guard の回帰テスト（51 件）
@@ -85,11 +86,17 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
       --encoder ecapa --glob "excerpts/straight/*.wav" --seconds 20 --device cpu
     uv run python tools/speaker_similarity.py --converted out/<変換結果> \
       --target download/ritsu --unrelated .m0data/unrelated_ref --seconds 20 --device cpu
+
+    # M5 の客観指標。**上限（--self-check が出す `*_vocoder_only.wav`）を必ず併せて作ること**
+    uv run python tools/timing_metrics.py  --dir out/<変換結果>
+    uv run python tools/asr_cer.py         --dir out/<変換結果> --language ja --device cpu
+    uv run python tools/signal_quality.py  --dir out/<変換結果> --device cpu
+    uv run python tools/rtf.py --wav <vocal.wav> --ckpt <ckpt> --manifest <manifest> --device cpu
     uv run ruff check .                        # lint（`--fix` で自動修正）
 
 `run_smoke.py` は 3rd-party API・学習・自動再開・推論・ボコーダー・前処理・ONNX 書き出しまでを 1 コマンドで通し、終了コードが失敗ステージ数になります。**依存やバージョンを変えた後、環境を移した後、学習を始める前に必ず走らせること。** 入力は合成波形なので品質の検証にはならず、配線が壊れていないことだけを示します。
 
-単体テストは **234 件**（`test_svc_model` 56 / `test_svc_preprocess` 115 / `test_svc_dataset` 63）で、重いモデルもネットワークも使いません。`unittest discover` は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。上の 3 本を明示的に並べるか、`run_smoke.py` の `unittest` ステージを使ってください。後者は top-level の `test_*.py` を自動収集し、件数を表示します。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗します。
+単体テストは **278 件**（`test_svc_model` 56 / `test_svc_preprocess` 115 / `test_svc_dataset` 63 / `test_svc_metrics` 44）で、重いモデルもネットワークも使いません。`unittest discover` は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。上の 4 本を明示的に並べるか、`run_smoke.py` の `unittest` ステージを使ってください。後者は top-level の `test_*.py` を自動収集し、件数を表示します。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗します。
 
 ONNX / OpenUTAU 書き出し（SVS のみ。実験的）:
 
@@ -210,6 +217,23 @@ hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の 
 - **内容指標だけで音の劣化を判断しないこと。** 上の不具合で centroid が 620 → 368 Hz に落ちても、content cos は 0.8217 → 0.8096 としか動きませんでした。`tools/audio_metrics.py` の帯域指標を併せて見ます。
 - **phrase 名の衝突は例外になりません。** `preprocess.svc.run` は曲ごとの通し番号で採番し、衝突を検出したら止めます。この採番を「ファイルごとに 0 から」に戻すと、同じ曲名の別ファイルが cache を**黙って上書き**し、shard の phrase 数が減るだけになります（GTSinger で 1,922 ファイルが 3 名に潰れました）。
 - **曲名を ASCII に削らないこと。** `_SAFE` は `[^\w-]` なので CJK を残します。ASCII だけにすると日本語題の曲がすべて同じ名前になり、曲単位 split が効きません（1,922 中 1,723 件が潰れました）。曲名は casefold して表記ゆれ（`Heartful_Song` と `Heartful_song`）も畳んでいます。
+- **M5 の客観指標は 4 つとも「上限との差」で読みます。** `tools/svc_convert.py --self-check` が
+出す `*_vocoder_only.wav`（GT mel をボコーダーに通した再合成）が上限で、`asr_cer.py` と
+`signal_quality.py` は**上限が無ければ実行を拒否**します。絶対値を品質として報告しないこと。
+- **CER は `--language` を素材に合わせないと全滅します。** VocalSet はイタリア語・英語・
+ラテン語の楽曲で、`ja` を強制すると source・変換・上限がすべて別物に書き起こされ CER が
+3 clip とも 1.0 になりました。**そのとき差は 0.0 になり「劣化していない」と読めてしまう**ので、
+上限 CER が 0.5 を超えたら `ceiling_unusable` を立てて差を出さないようにしてあります。
+日本語素材では機能します（実測で上限 0.0 / 変換 0.60）。
+- **onset のずれは hop（5.8 ms）より細かく測れません。** 実測でずれの中央値がちょうど
+1 フレームでした。**これは「ほぼずれていない」ではなく測定限界**です。timing で読むべきは
+`matched_ratio`（実測 69.1%。onset の 3 割は対応が付かない）のほうです。
+- **RTF は段ごとに出します。** 実測（CPU・Windows・compile 無効）で acoustic のみ **0.081**、
+合計 **0.654** で、**最大の項はボコーダー（0.355）**でした。「1-step だから速い」は acoustic の
+話であって pipeline 全体ではありません。`realtime_capable` は `rtf_total < 1` を見ているだけで、
+chunk 境界も I/O 遅延も連続運転も見ていません。
+- **信号品質（SQUIM）は話し声で学習されています。** 歌声への妥当性は未検証なので、
+絶対値ではなく上限との差だけを読みます。
 - SVC では online `pitch_aug` を使えません（特徴量が事前計算済みのため）。`train.py` が明示的に SystemExit します。augmentation は特徴量抽出前に行います。
 - **学習はすべて vast.ai の Linux インスタンスで行います。手元の Windows で `train.py` を起動すると device によらず hook が止めます**（`tools/hooks/guard_commands.py` の `check_local_training`）。`--device cpu` に逃げるのも不可です。CPU は実測で 1 phrase 1200 step に約 60 分かかり、実験記録の環境も本番と食い違います。ローカル GPU は他の作業と取り合って `unspecified launch failure` を起こしました（実際に発生）。 手元の Windows 機は開発・推論・検証用で、セットアップは `tools/vast_bootstrap.sh`。API token 等は `.env`（gitignore 済み）に置きます。`uv.lock` は Linux も解決済みで、Linux では `triton` が入るため下の `torch.compile` の制約は当てはまりません。
 - **Windows では `torch.compile` が使えません。** `harmonic_excitation.py` の倍音和は compile 前提の融合版（Linux + Triton で 3〜4 倍）ですが、Windows には Triton wheel がなく、さらに日本語ロケール（cp932）では inductor の template 読み込み自体が `UnicodeDecodeError` になります。`triton-windows` を入れても C コンパイラが必要です。コードは **compile 生成時と初回呼び出しの両方**でループ版へフォールバックします（数値差は加算順のみ）。最初から切るなら `LEAPSINGER_EXC_COMPILE=0`。

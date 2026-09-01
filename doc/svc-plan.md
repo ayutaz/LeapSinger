@@ -813,8 +813,53 @@ M4 完了。
 3. **話者類似度は較正済みの条件でのみ測ること。** ECAPA-TDNN・**12 秒以上**のクリップ
    （[評価計画](svc-evaluation.md) 4 節の較正表）。6 秒では較正を通りません。
    **test set のクリップ長を 12 秒未満にしないこと**が設計上の制約になります。
-4. **指標の半分はまだ道具がありません**（CER、信号品質、timing、推論 RTF）。
-   [評価計画](svc-evaluation.md) 4 節「M5 に入る前の棚卸し」を参照。M5 の中で作ることになります。
+4. **指標の道具は 4 つとも揃いました（2026-09-01）。** timing / CER / 信号品質 / 推論 RTF。
+   ただし**それぞれに限界があり、M5 で読むときの前提になります**（[評価計画](svc-evaluation.md)
+   4 節）。とくに **CER は `--language` を素材に合わせること**（VocalSet はイタリア語・英語・
+   ラテン語で、`ja` を強制すると全滅します）、**timing のずれは分解能 5.8 ms 以下**なので
+   `matched_ratio` を読むこと、**RTF の最大の項はボコーダー**（合計 0.654 のうち 0.355）で
+   acoustic は 0.081 にすぎないこと。
+
+### 測定の手順（2026-09-01 に道具を揃えた）
+
+**確認済み:** 客観指標の道具は揃っています。**ただしバラバラに走らせると条件が揃わない**ので、
+次の順で回します。**上限（`*_vocoder_only.wav`）を作る `--self-check` を省かないこと** —
+CER と信号品質は上限が無ければ実行を拒否します。
+
+```bash
+# 1. 変換する。**上限を必ず一緒に作る**（--self-check）
+#    男女をまたぐなら --transpose、持ち込み音源なら --match-loudness
+uv run python tools/svc_convert.py --wav <vocal.wav> --out out/<run> \
+  --ckpt <ckpt> --manifest <manifest> --spk-id 22 --transpose 0 --seconds 20 --self-check
+
+# 2. 内容・F0・V/UV・明るさ（既存）
+uv run python tools/m3_verify.py --ckpt <ckpt> --manifest <manifest> --out out/<run>/m3
+
+# 3. 話者類似度。**12 秒以上のクリップで**
+uv run python tools/speaker_similarity.py --converted out/<run> \
+  --target download/ritsu --unrelated .m0data/unrelated_ref --seconds 20
+
+# 4. M5 で追加した 4 つ
+uv run python tools/timing_metrics.py  --dir out/<run> --out out/<run>/timing.json
+uv run python tools/asr_cer.py         --dir out/<run> --language ja --out out/<run>/cer.json
+uv run python tools/signal_quality.py  --dir out/<run> --out out/<run>/sq.json
+uv run python tools/rtf.py --wav <vocal.wav> --ckpt <ckpt> --manifest <manifest> \
+  --out out/<run>/rtf.json
+```
+
+**test set の設計に効く制約（道具の側から決まるもの）:**
+
+| 制約 | 理由 |
+|---|---|
+| **クリップは 12 秒以上** | 話者類似度の較正がその長さでしか通らない |
+| **日本語の素材を入れる** | CER は言語が合わないと全滅する。VocalSet（伊・英・羅）だけでは測れない |
+| **上限を必ず作る** | CER・信号品質・明るさは上限との差でしか読めない |
+| **移調条件を固定して記録** | 明るさが F0 に強く従う。両システムで揃えないと不公平 |
+
+**Seed-VC 側にも同じ 4 指標を当てられます**（どれも WAV のディレクトリを受け取るだけで、
+LeapSVC の内部に依存しません）。**ただし上限の作り方は揃えること** — Seed-VC は mel 表現も
+ボコーダーも違うので、「GT mel の再合成」は同じ意味になりません。**共通の上限を使うか、
+上限に依存しない指標（timing・話者類似度）で比べるか**を、比較の前に決めます（**要ユーザー判断**）。
 
 ### 主張の制約
 

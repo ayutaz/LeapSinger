@@ -94,7 +94,11 @@ No.7 は対象外**で、発声スタイルの coverage は技法ラベルを持
 ### Gate B: offline
 
 - held-out song と未知 source singer で変換できる。
-- target similarity、F0、明瞭度、ノイズの客観指標を記録する。
+- target similarity、F0、明瞭度（CER）、信号品質、timing、推論 RTF の客観指標を記録する。
+  **道具は揃っています**（[評価計画](svc-evaluation.md) 4 節）。
+- **CER と信号品質は「上限（GT mel をボコーダーに通した再合成）との差」でのみ読む。**
+  絶対値は、ASR とボコーダーと採点器の素性を含むので品質の根拠になりません。閾値を置くなら
+  差に対して置きます。
 - **target similarity については、使う speaker encoder が歌声で較正（上限・下限・重なり）を
   通っていること。** 2026-09-01 に **ECAPA-TDNN・12 秒以上**で較正を通しました
   （[評価計画](svc-evaluation.md) 4 節）。**test set のクリップを 12 秒未満にしないこと**が
@@ -107,6 +111,9 @@ No.7 は対象外**で、発声スタイルの coverage は技法ラベルを持
 ### Gate C: streaming
 
 - Gate B を満たした teacher を基準に student を評価する。
+- **RTF は段ごとに出す**（[`tools/rtf.py`](../tools/rtf.py)）。実測（CPU）で最大の項は
+  ボコーダーであり、acoustic は合計の 1/8 でした。**student で acoustic を速くしても、
+  ボコーダーと特徴抽出が支配的なら end-to-end はほとんど変わりません。**
 - chunk 境界に click、音切れ、F0 jump がない。
 - RTF、algorithmic lookahead、audio I/O を含む end-to-end latency を実機測定する。
 - 長時間連続運転で buffer overrun / underrun がない。

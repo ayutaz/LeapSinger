@@ -35,6 +35,11 @@
 | [`tools/audio_metrics.py`](../tools/audio_metrics.py) | 追加済み | 帯域エネルギー比と spectral centroid。**内容指標が検知しない高域の欠落**を測る |
 | [`tools/speaker_similarity.py`](../tools/speaker_similarity.py) | 実装済み | M4 ゴール 2 の話者類似度。上限・下限・回復率。**既定は ECAPA-TDNN**、12 秒未満のクリップは拒否する |
 | [`tools/speaker_calibrate.py`](../tools/speaker_calibrate.py) | 追加済み | 話者照合 encoder が**歌声で使えるか**を 3 群の重なりで判定。**合格条件は事前登録**（`MAX_OVERLAP = 0.20`） |
+| [`tools/timing_metrics.py`](../tools/timing_metrics.py) | 追加済み | M5 の timing。onset のずれと**対応が付いた割合**。分解能は hop（5.8 ms） |
+| [`tools/asr_cer.py`](../tools/asr_cer.py) | 追加済み | M5 の CER。**上限が判別不能なら差を出さない**。`--language` を素材に合わせること |
+| [`tools/signal_quality.py`](../tools/signal_quality.py) | 追加済み | M5 の信号品質（torchaudio SQUIM）。**上限との差のみ**。歌声への妥当性は未検証 |
+| [`tools/rtf.py`](../tools/rtf.py) | 追加済み | M5 の推論 RTF。**段ごとに分解**し、特徴抽出と vocoder を含む / 除くを併記 |
+| [`test_svc_metrics.py`](../test_svc_metrics.py) | 追加済み | 上記 4 指標の契約テスト（44 件）。重いモデルは引数で受け取る |
 | [`configs/svc_target_ft.yaml`](../configs/svc_target_ft.yaml) | 追加済み | M4 の recipe。**checkpoint 選択規則を header に明記**（train loss だけで選ばない） |
 | [`configs/svc_base_multi.yaml`](../configs/svc_base_multi.yaml) | 追加済み | M3 の recipe。`spk_map` / `n_speakers` は素材から生成 |
 | [`test_svc_preprocess_integration.py`](../test_svc_preprocess_integration.py) | 追加済み | 実モデルを使う統合テスト（既定 skip） |
@@ -161,7 +166,7 @@ Python 3.13 / torch 2.13 / librosa 1.0 へ更新した後、次を上記環境�
 
 ### 確認済み
 
-- 自動テスト **234 件**が成功（`test_svc_model` 56 / `test_svc_preprocess` 115 / `test_svc_dataset` 63）。重いモデルもネットワークも使いません。実モデルの統合テストは 4 件で、`LEAPSINGER_INTEGRATION=1` のときだけ走ります。
+- 自動テスト **278 件**が成功（`test_svc_model` 56 / `test_svc_preprocess` 115 / `test_svc_dataset` 63 / `test_svc_metrics` 44）。重いモデルもネットワークも使いません。実モデルの統合テストは 4 件で、`LEAPSINGER_INTEGRATION=1` のときだけ走ります。
 - コマンド guard の回帰テスト **51 件**（`tools/hooks/test_guard.py`）。止めすぎ検出のため、通ってほしいケースも同数以上入れています。
 - **実音声 5 コーパスへの検査・coverage・split**（M0。下記「M0 の実データ検証」）。
 - padding された frame が有効 frame に影響しないこと。
@@ -343,8 +348,8 @@ ECAPA-TDNN に替え、12 秒以上のクリップで較正を通してから測
 
 ### 制限付き
 
-top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` / `test_svc_dataset.py` の
-3 本（統合テストを除く）で、`run_smoke.py` の `unittest` ステージがこれを自動収集します。
+top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` /
+`test_svc_dataset.py` / `test_svc_metrics.py` の 4 本（統合テストを除く）で、`run_smoke.py` の `unittest` ステージがこれを自動収集します。
 `unittest discover` 自体は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。
 **SVS の前処理・export・既存 SVS 経路そのものには自動テストがありません**（`tools/smoke/run_smoke.py`
 が疎通を確認するだけです）。
@@ -360,9 +365,12 @@ top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` / `
   モデル側で緩めるには特徴抽出前の pitch augmentation が要る（**未実装**）。
 - **話し声（非歌唱）入力への対応**。学習素材が歌唱のみのため分布外で、移調では直らない
   （+12 にしても −28.2%）。**未実装**。
-- **CER（明瞭度）・信号品質・timing・推論 RTF。** M5 ゴール 2 が要求しますが**道具がありません**
-  （[評価計画](svc-evaluation.md) 4 節「M5 に入る前の棚卸し」）。`content_cos` は明瞭度の
-  代理であって CER ではありません。
+- ~~CER・信号品質・timing・推論 RTF の道具~~ — **作りました（2026-09-01）。** ただし
+  **測定そのものは未実施**です（動作確認に使った数 clip があるだけ）。各指標の限界は
+  [評価計画](svc-evaluation.md) 4 節。`content_cos` は明瞭度の代理であって CER ではありません。
+- **歌声に妥当な信号品質の指標。** SQUIM も DNSMOS も話し声で学習されており、**歌唱への
+  妥当性は未検証**です。上限との差としてのみ使えます。
+- **CER の日本語歌唱での信頼性。** 上限 0.0 を確認したのは **1 clip** だけです。
 - 256 次元部分集合の seed 比較の**反復**（1 度は実施済み。各 1 run では部分集合の差と run のばらつきを分離できない）。**M4 まで反復せずに進みました。**
 - SVS checkpoint の安全な部分 warm-start。
 - Seed-VC との客観・主観比較。
@@ -380,7 +388,7 @@ top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` / `
 4. ~~multi-singer base~~ — **完了**（M3）。
 5. ~~target fine-tune~~ — **完了**（M4）。話者類似度まで測定済み。
 6. ~~歌声で較正を通る話者照合 encoder への差し替え~~ — **完了**（ECAPA-TDNN、`eval` extra）。
-7. **M5 の指標のうち道具が無いもの**（CER / 信号品質 / timing / 推論 RTF）を作る。
+7. ~~M5 の指標のうち道具が無いもの~~ — **完了**（timing / CER / 信号品質 / 推論 RTF）。
 8. SVS -> SVC shared-weight warm-start loader と load-report tests（条件付きトラック A。M3 のコストが問題になった場合のみ）。
 9. Seed-VC comparison suite と blind review artifact（M5）。
 10. offline gate 後に streaming student（M6）。
