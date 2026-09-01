@@ -96,7 +96,7 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
 
 `run_smoke.py` は 3rd-party API・学習・自動再開・推論・ボコーダー・前処理・ONNX 書き出しまでを 1 コマンドで通し、終了コードが失敗ステージ数になります。**依存やバージョンを変えた後、環境を移した後、学習を始める前に必ず走らせること。** 入力は合成波形なので品質の検証にはならず、配線が壊れていないことだけを示します。
 
-単体テストは **278 件**（`test_svc_model` 56 / `test_svc_preprocess` 115 / `test_svc_dataset` 63 / `test_svc_metrics` 44）で、重いモデルもネットワークも使いません。`unittest discover` は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。上の 4 本を明示的に並べるか、`run_smoke.py` の `unittest` ステージを使ってください。後者は top-level の `test_*.py` を自動収集し、件数を表示します。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗します。
+単体テストは **366 件**（`test_svc_model` 57 / `test_svc_preprocess` 115 / `test_svc_dataset` 63 / `test_svc_metrics` 131）で、重いモデルもネットワークも使いません。`unittest discover` は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。上の 4 本を明示的に並べるか、`run_smoke.py` の `unittest` ステージを使ってください。後者は top-level の `test_*.py` を自動収集し、件数を表示します。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗します。
 
 ONNX / OpenUTAU 書き出し（SVS のみ。実験的）:
 
@@ -197,7 +197,7 @@ hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の 
 - 「世界初」「唯一」は使わない（rectified-flow SVC も harmonic modelling も先行研究がある）。
 - 「1-step」は acoustic flow の step 数であり、pipeline 全体の話ではない。
 
-現在の到達点は**完了レベル 3（実データ）**です。実音声から shard を作り、23 話者・約 18 時間の multi-singer base を **60,000 step** 学習し、そこから波音リツへ **20,000 step の fine-tune** まで実施しました（M0〜M4 完了）。**M5（Seed-VC 比較）は客観指標の道具まで揃え、判定規則も事前登録済み**（guard rail 方式・N=1 の非公式 preference test・20 clip）**ですが、測定本番は未実施**です。**streaming student（M6）は未着手**です（`doc/svc-implementation-status.md` の検証済み / 未検証の境界を参照）。
+現在の到達点は**完了レベル 3（実データ）**です。実音声から shard を作り、23 話者・約 18 時間の multi-singer base を **60,000 step** 学習し、そこから波音リツへ **20,000 step の fine-tune** まで実施しました（M0〜M4 完了）。**M5（Seed-VC 比較）は客観指標の測定まで完了**し、**話者類似度で Seed-VC が上回った**ため（0.4712 対 0.5912）、事前登録した規則により**「Seed-VC より良い」とは書けません**。**blind listening test だけ未実施**です（評価者が聴く工程。材料は `out/m5/blind/`）。**streaming student（M6）は未着手**です（`doc/svc-implementation-status.md` の検証済み / 未検証の境界を参照）。
 
 **M4 で分かった trade-off（実測）:** fine-tune を進めるほど **target らしさは上がり**（話者類似度の回復率 45.1% → 58.0%、自己再構成は上限比 94.8% → 98.1%）、**未知 source の内容保持は単調に落ちます**（cos 0.8599 → 0.8359）。config に事前登録した規則（未知 source の cos が base から 0.02 を超えて落ちた checkpoint は選ばない）で **`ckpt_010000` を選択**しました。train loss だけで選ぶと 20,000 step を選んでしまいます。
 
@@ -220,6 +220,15 @@ hook が止めるもの: `uv pip` / 素の `pip` / 素の `python`、`.env` の 
 - **`uv sync --extra <名前>` は「これだけにする」指定です。** 足す指定ではありません。
 `uv sync --extra eval` だけを走らせると **train / export / dev が消えます**（実際に踏み、
 tensorboard・onnx・ruff が消えました）。**必要な extra を毎回すべて並べること。**
+- **上限を共有できない指標は、系をまたいで比べられません。** CER・信号品質・明るさは
+「GT mel を**自分の**ボコーダーに通した再合成」が基準なので、Seed-VC と並べられません
+（実測で確認）。**比べられるのは source か target 録音を基準にする指標だけ**です
+（話者類似度・timing・F0・V/UV）。failure taxonomy の本数を 2 系で比べるのも誤りです
+（測った軸の数が違う）。
+- **hold-out 区間は有声率を確かめてから使うこと。** 曲を等分して窓内でずらすと**イントロや
+間奏を掴みます**（実測で 6 本中 3 本が有声率 3.5〜34%）。**リツ本人の録音がリツの参照と
+0.39 しか一致しない**という異常で気づきました（曲の中央なら 0.77〜0.79）。
+`tools/m5_testset.py` は有声率 60% 以上を要求します。
 - **M5 の客観指標は 4 つとも「上限との差」で読みます。** `tools/svc_convert.py --self-check` が
 出す `*_vocoder_only.wav`（GT mel をボコーダーに通した再合成）が上限で、`asr_cer.py` と
 `signal_quality.py` は**上限が無ければ実行を拒否**します。絶対値を品質として報告しないこと。
@@ -231,8 +240,10 @@ tensorboard・onnx・ruff が消えました）。**必要な extra を毎回す
 - **onset のずれは hop（5.8 ms）より細かく測れません。** 実測でずれの中央値がちょうど
 1 フレームでした。**これは「ほぼずれていない」ではなく測定限界**です。timing で読むべきは
 `matched_ratio`（実測 69.1%。onset の 3 割は対応が付かない）のほうです。
-- **RTF は段ごとに出します。** 実測（CPU・Windows・compile 無効）で acoustic のみ **0.081**、
-合計 **0.654** で、**最大の項はボコーダー（0.355）**でした。**README の性能表（SVS 経路・
+- **RTF は段ごとに出します。** 実測で **最大の項はボコーダー**です。CPU で acoustic 0.081 /
+合計 0.654（ボコーダー 0.355）、**GPU では acoustic 0.006 / 合計 0.464（ボコーダー 0.432、
+全体の 93%）**。NHVSing が ONNX で CPU 実行のためで、**acoustic を速くしても end-to-end は
+ほとんど変わりません**（M6 の設計に直接効きます）。**README の性能表（SVS 経路・
 Apple Silicon・ボコーダー < 0.1）とは機種も経路も違うので比較できません。**「1-step だから速い」は acoustic の
 話であって pipeline 全体ではありません。`realtime_capable` は `rtf_total < 1` を見ているだけで、
 chunk 境界も I/O 遅延も連続運転も見ていません。

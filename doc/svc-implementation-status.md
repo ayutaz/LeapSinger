@@ -39,7 +39,14 @@
 | [`tools/asr_cer.py`](../tools/asr_cer.py) | 追加済み | M5 の CER。**上限が判別不能なら差を出さない**。`--language` を素材に合わせること |
 | [`tools/signal_quality.py`](../tools/signal_quality.py) | 追加済み | M5 の信号品質（torchaudio SQUIM）。**上限との差のみ**。歌声への妥当性は未検証 |
 | [`tools/rtf.py`](../tools/rtf.py) | 追加済み | M5 の推論 RTF。**段ごとに分解**し、特徴抽出と vocoder を含む / 除くを併記 |
-| [`test_svc_metrics.py`](../test_svc_metrics.py) | 追加済み | 上記 4 指標の契約テスト（44 件）。重いモデルは引数で受け取る |
+| [`tools/pitch_metrics.py`](../tools/pitch_metrics.py) | 追加済み | M5 の F0 相関 / 半音差 / V-UV。**変換済み WAV から測る**ので両システムに当たる |
+| [`tools/m5_testset.py`](../tools/m5_testset.py) | 追加済み | M5 の test set を決定的に組む。**有声率の下限**と 1 歌手 1 clip を強制 |
+| [`tools/svc_batch.py`](../tools/svc_batch.py) | 追加済み | 複数 clip を 1 プロセスで変換。**変換条件の一致を機械検査**する |
+| [`tools/blind_test.py`](../tools/blind_test.py) | 追加済み | blind preference の材料作成と集計。system 名を隠し、順序を randomize |
+| [`tools/guard_rail.py`](../tools/guard_rail.py) | 追加済み | 事前登録した判定。**guard rail が 1 つでも落ちたら「より良い」と書けない** |
+| [`tools/failure_taxonomy.py`](../tools/failure_taxonomy.py) | 追加済み | M5 ゴール 4。failure を除外せず分類して残す |
+| [`tools/normalise_outputs.py`](../tools/normalise_outputs.py) | 追加済み | 外部 baseline の出力を測定ツールが読む形へ揃える |
+| [`test_svc_metrics.py`](../test_svc_metrics.py) | 追加済み | 上記の契約テスト（131 件）。重いモデルは引数で受け取る |
 | [`configs/svc_target_ft.yaml`](../configs/svc_target_ft.yaml) | 追加済み | M4 の recipe。**checkpoint 選択規則を header に明記**（train loss だけで選ばない） |
 | [`configs/svc_base_multi.yaml`](../configs/svc_base_multi.yaml) | 追加済み | M3 の recipe。`spk_map` / `n_speakers` は素材から生成 |
 | [`test_svc_preprocess_integration.py`](../test_svc_preprocess_integration.py) | 追加済み | 実モデルを使う統合テスト（既定 skip） |
@@ -166,7 +173,7 @@ Python 3.13 / torch 2.13 / librosa 1.0 へ更新した後、次を上記環境�
 
 ### 確認済み
 
-- 自動テスト **278 件**が成功（`test_svc_model` 56 / `test_svc_preprocess` 115 / `test_svc_dataset` 63 / `test_svc_metrics` 44）。重いモデルもネットワークも使いません。実モデルの統合テストは 4 件で、`LEAPSINGER_INTEGRATION=1` のときだけ走ります。
+- 自動テスト **366 件**が成功（`test_svc_model` 57 / `test_svc_preprocess` 115 / `test_svc_dataset` 63 / `test_svc_metrics` 131）。重いモデルもネットワークも使いません。実モデルの統合テストは 4 件で、`LEAPSINGER_INTEGRATION=1` のときだけ走ります。
 - コマンド guard の回帰テスト **51 件**（`tools/hooks/test_guard.py`）。止めすぎ検出のため、通ってほしいケースも同数以上入れています。
 - **実音声 5 コーパスへの検査・coverage・split**（M0。下記「M0 の実データ検証」）。
 - padding された frame が有効 frame に影響しないこと。
@@ -346,6 +353,27 @@ ECAPA-TDNN に替え、12 秒以上のクリップで較正を通してから測
 各 20 秒、男性は +12 半音）を波音リツへ変換した結果です。**1 群 3 clip と少ないので順序だけを
 読み、幅を読まないこと。** 詳細と限界は [実行計画](svc-plan.md) M4 の進捗節。
 
+### M5（Seed-VC 比較）の実証（2026-09-01）
+
+**確認済み:** 事前登録した test set（未知 source 20 + hold-out 6）を両システムで変換し、
+客観指標を測りました。詳細は [実行計画](svc-plan.md) M5 の進捗節、記録は `out/m5/record.json`。
+
+| 指標 | LeapSVC | Seed-VC |
+|---|---:|---:|
+| 話者類似度（回復率） | 0.4712（50.3%） | **0.5912（80.2%）** |
+| timing 対応率 | 66.2% | 70.8% |
+| F0 相関 | **0.9996** | 0.9978 |
+| 半音差（移調を除く） | **0.01** | 0.07 |
+| V/UV 一致 | **99.2%** | 98.7% |
+
+**判定: 「Seed-VC より良い」とは書けません**（話者類似度で guard rail が落ちた）。
+**F0 追従と V/UV は LeapSVC が上**です。
+
+LeapSVC 単独では、**信号品質は自分の上限とほぼ同等**（stoi −0.006）、**CER は上限から
++0.168** 悪化。推論 RTF は GPU で合計 0.464、**うちボコーダーが 0.432**（93%）。
+
+**未実施:** ゴール 3 の blind listening test（評価者が聴く工程）。材料は `out/m5/blind/`。
+
 ### 制限付き
 
 top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` /
@@ -365,9 +393,10 @@ top-level の `test_*.py` は `test_svc_model.py` / `test_svc_preprocess.py` /
   モデル側で緩めるには特徴抽出前の pitch augmentation が要る（**未実装**）。
 - **話し声（非歌唱）入力への対応**。学習素材が歌唱のみのため分布外で、移調では直らない
   （+12 にしても −28.2%）。**未実装**。
-- ~~CER・信号品質・timing・推論 RTF の道具~~ — **作りました（2026-09-01）。** ただし
-  **測定そのものは未実施**です（動作確認に使った数 clip があるだけ）。各指標の限界は
+- ~~CER・信号品質・timing・推論 RTF~~ — **測定済み（2026-09-01、M5）。** 各指標の限界は
   [評価計画](svc-evaluation.md) 4 節。`content_cos` は明瞭度の代理であって CER ではありません。
+- **主観的な品質差。** blind listening test が未実施なので、**自然さ・こもり・ノイズは
+  記録がありません**。客観指標が拾えない軸です。
 - **歌声に妥当な信号品質の指標。** SQUIM も DNSMOS も話し声で学習されており、**歌唱への
   妥当性は未検証**です。上限との差としてのみ使えます。
 - **CER の日本語歌唱での信頼性。** 上限 0.0 を確認したのは **1 clip** だけです。

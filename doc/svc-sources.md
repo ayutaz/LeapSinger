@@ -25,7 +25,7 @@
 | [`configs/3speaker_gan2d.yaml`](../configs/3speaker_gan2d.yaml) | 既存 SVS batch/update/GAN 設定の比較 |
 | [`test_svc_model.py`](../test_svc_model.py) | targeted verification の範囲 |
 | [`preprocess/svc/`](../preprocess/svc/) | 整列・部分集合・loudness・検査・coverage・split・report の実装 |
-| [`test_svc_preprocess.py`](../test_svc_preprocess.py) / [`test_svc_dataset.py`](../test_svc_dataset.py) | 契約テスト（合計 234 件のうち 178 件） |
+| [`test_svc_preprocess.py`](../test_svc_preprocess.py) / [`test_svc_dataset.py`](../test_svc_dataset.py) | 契約テスト（合計 366 件のうち 178 件） |
 | [`configs/svc_base_multi.yaml`](../configs/svc_base_multi.yaml) / [`tools/m3_corpus.py`](../tools/m3_corpus.py) | M3 の recipe と素材の用意（話者ごとに 1 shard） |
 | [`tools/m2_verify.py`](../tools/m2_verify.py) / [`tools/m3_verify.py`](../tools/m3_verify.py) / [`tools/nhv_indist.py`](../tools/nhv_indist.py) | M2 / M3 / M0 ゴール 4 の測定と、その JSON 報告 |
 | [`tools/svc_convert.py`](../tools/svc_convert.py) / [`tools/audio_metrics.py`](../tools/audio_metrics.py) | 任意 WAV の変換 CLI と、帯域・spectral centroid の測定 |
@@ -39,7 +39,12 @@
 | `out/sim/report_{base,ft10000,ft20000}.json` と `out/sim/breakdown.json` | M4 ゴール 2 の話者類似度（未知 source 6 clip、上限・下限つき、性別内訳） |
 | [`tools/timing_metrics.py`](../tools/timing_metrics.py) / [`tools/asr_cer.py`](../tools/asr_cer.py) / [`tools/signal_quality.py`](../tools/signal_quality.py) / [`tools/rtf.py`](../tools/rtf.py) | M5 の客観指標 4 つ。**各 docstring に実測の限界**（分解能・言語依存・話し声モデル・段別 RTF） |
 | `out/{rtf_cpu,cer_ja,cer_ft10000,sq_ft10000,timing_ft10000}.json` | 上記 4 指標の動作確認の一次データ（**測定本番ではない**） |
-| [`test_svc_metrics.py`](../test_svc_metrics.py) | 4 指標の契約テスト 44 件 |
+| [`test_svc_metrics.py`](../test_svc_metrics.py) | M5 の客観指標と道具の契約テスト 131 件 |
+| `out/m5/record.json` | **M5 の実験記録**（両系の checkpoint / 設定 / 素材 / 全指標 / 判定と、その限界） |
+| `out/m5/testset.json` | M5 の test set（seed から決定的。有声率と移調量つき） |
+| `out/m5/metrics_{leapsvc,seedvc}/*.json` | 両系の測定（pitch / timing / similarity / cer / signal_quality / failures / rtf） |
+| `out/m5/guard_rail.json` | 事前登録した判定の結果（**話者類似度で落ちた**） |
+| `out/m5/blind/` | blind preference の材料（26 ペア、system 名を隠したもの）。**未実施** |
 | [`doc/svc-content-encoder.md`](svc-content-encoder.md) / [`doc/svc-dataset-ledger.md`](svc-dataset-ledger.md) | encoder 選定と M0 台帳 |
 | [`pyproject.toml`](../pyproject.toml) / [`uv.lock`](../uv.lock) / `.python-version` | Python 3.13 固定、CUDA wheel index、依存の解決結果 |
 | [`CLAUDE.md`](../CLAUDE.md) | コマンド、共有スタック、データ契約、既知の落とし穴 |

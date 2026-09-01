@@ -993,3 +993,159 @@ class ConversionConsistencyTests(unittest.TestCase):
         self.assertFalse(r["consistent"])
         self.assertIn("chunk_sec", r["differing"])
 
+
+class PitchMetricsTests(unittest.TestCase):
+    """F0 追従と V/UV（M5 ゴール 2）。
+
+    **変換済みの WAV から測ります。** `m3_verify.py` は自分で変換してしまうので、
+    既に作った test set（両システム分）には使えません。**同じ出力を両系で測る**必要が
+    あります。
+
+    F0 抽出器は引数で受け取るので、このテストは重いモデルを使いません。
+    """
+
+    def test_correlation_is_one_for_identical_pitch(self):
+        from tools.pitch_metrics import pitch_report
+        f0 = np.array([100.0, 110.0, 120.0, 130.0], dtype=np.float32)
+        uv = np.ones(4, dtype=np.float32)
+        r = pitch_report((f0, uv), (f0, uv))
+        self.assertAlmostEqual(r["f0_corr"], 1.0, places=6)
+        self.assertAlmostEqual(r["median_abs_semitones"], 0.0, places=6)
+
+    def test_a_constant_octave_shift_shows_as_twelve_semitones(self):
+        from tools.pitch_metrics import pitch_report
+        f0 = np.array([100.0, 110.0, 120.0, 130.0], dtype=np.float32)
+        uv = np.ones(4, dtype=np.float32)
+        r = pitch_report((f0, uv), (f0 * 2, uv))
+        self.assertAlmostEqual(r["median_abs_semitones"], 12.0, places=4)
+        self.assertAlmostEqual(r["f0_corr"], 1.0, places=6)
+
+    def test_an_expected_transpose_is_removed_before_comparing(self):
+        # 男性 source は +12 半音で変換している。それを誤差として数えない。
+        from tools.pitch_metrics import pitch_report
+        f0 = np.array([100.0, 110.0, 120.0, 130.0], dtype=np.float32)
+        uv = np.ones(4, dtype=np.float32)
+        r = pitch_report((f0, uv), (f0 * 2, uv), transpose=12.0)
+        self.assertAlmostEqual(r["median_abs_semitones"], 0.0, places=4)
+
+    def test_unvoiced_frames_are_excluded_from_the_pitch_error(self):
+        # 無声フレームの F0 は意味を持たない。混ぜると誤差が壊れる。
+        from tools.pitch_metrics import pitch_report
+        f0a = np.array([100.0, 0.0, 120.0], dtype=np.float32)
+        f0b = np.array([100.0, 999.0, 120.0], dtype=np.float32)
+        uv = np.array([1.0, 0.0, 1.0], dtype=np.float32)
+        r = pitch_report((f0a, uv), (f0b, uv))
+        self.assertAlmostEqual(r["median_abs_semitones"], 0.0, places=6)
+
+    def test_uv_agreement_counts_matching_frames(self):
+        from tools.pitch_metrics import pitch_report
+        f0 = np.array([100.0, 100.0, 100.0, 100.0], dtype=np.float32)
+        a = np.array([1.0, 1.0, 0.0, 0.0], dtype=np.float32)
+        b = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+        r = pitch_report((f0, a), (f0, b))
+        self.assertAlmostEqual(r["uv_agree"], 0.75)
+
+    def test_length_mismatch_is_trimmed_to_the_shorter(self):
+        # 系ごとに端数フレームが違う。**黙って伸ばさず、短いほうへ揃える。**
+        from tools.pitch_metrics import pitch_report
+        f0a = np.array([100.0, 110.0, 120.0], dtype=np.float32)
+        f0b = np.array([100.0, 110.0], dtype=np.float32)
+        r = pitch_report((f0a, np.ones(3, np.float32)), (f0b, np.ones(2, np.float32)))
+        self.assertEqual(r["n_frames"], 2)
+
+    def test_no_voiced_frames_returns_none_rather_than_zero(self):
+        # 無声だけの clip で 0 を返すと「完璧に一致」と読めてしまう。
+        from tools.pitch_metrics import pitch_report
+        z = np.zeros(4, dtype=np.float32)
+        r = pitch_report((z, z), (z, z))
+        self.assertIsNone(r["median_abs_semitones"])
+        self.assertIsNone(r["f0_corr"])
+
+
+class FailureTaxonomyTests(unittest.TestCase):
+    """failure sample の分類（M5 ゴール 4、[評価計画](doc/svc-evaluation.md) 7 節）。
+
+    **failure を除外せず、分類して残します。** 悪い clip を捨てると平均は良くなりますが、
+    何が壊れるのかが分からなくなります。
+
+    **機械的に判定できるものだけを扱います。** 「こもっている」「不自然」のような聴感は
+    ここでは扱いません（blind test の担当）。判定に使う数値は既に測ってあるものです。
+    """
+
+    def _clip(self, **kw):
+        base = {"tag": "unseen00", "uv_agree": 0.99, "median_abs_semitones": 0.1,
+                "matched_ratio": 0.7, "cer_excess": 0.1, "centroid_ratio": 1.0,
+                "peak": 0.5, "finite": True}
+        base.update(kw)
+        return base
+
+    def test_a_clean_clip_has_no_categories(self):
+        from tools.failure_taxonomy import classify
+        self.assertEqual(classify(self._clip()), [])
+
+    def test_a_silent_output_is_flagged(self):
+        from tools.failure_taxonomy import classify
+        self.assertIn("silence", classify(self._clip(peak=1e-5)))
+
+    def test_a_non_finite_output_is_flagged(self):
+        from tools.failure_taxonomy import classify
+        self.assertIn("nonfinite", classify(self._clip(finite=False)))
+
+    def test_an_octave_error_is_flagged_as_pitch(self):
+        from tools.failure_taxonomy import classify
+        self.assertIn("pitch", classify(self._clip(median_abs_semitones=11.8)))
+
+    def test_a_small_pitch_deviation_is_not_flagged(self):
+        from tools.failure_taxonomy import classify
+        self.assertNotIn("pitch", classify(self._clip(median_abs_semitones=0.4)))
+
+    def test_bad_voicing_agreement_is_flagged(self):
+        from tools.failure_taxonomy import classify
+        self.assertIn("voicing", classify(self._clip(uv_agree=0.70)))
+
+    def test_many_lost_onsets_are_flagged_as_timing(self):
+        from tools.failure_taxonomy import classify
+        self.assertIn("timing", classify(self._clip(matched_ratio=0.35)))
+
+    def test_a_large_cer_excess_is_flagged_as_content(self):
+        from tools.failure_taxonomy import classify
+        self.assertIn("content", classify(self._clip(cer_excess=0.6)))
+
+    def test_a_dark_output_is_flagged_as_timbre(self):
+        # 上限に対して明るさが大きく外れている（M3 で耳で分かった劣化）。
+        from tools.failure_taxonomy import classify
+        self.assertIn("timbre", classify(self._clip(centroid_ratio=0.5)))
+
+    def test_a_bright_output_is_also_flagged(self):
+        # 明るすぎるのも外れ。符号つきで見ると打ち消し合う。
+        from tools.failure_taxonomy import classify
+        self.assertIn("timbre", classify(self._clip(centroid_ratio=1.8)))
+
+    def test_missing_values_do_not_produce_a_category(self):
+        # 測れなかった軸を「失敗」と数えない（CER は 8 clip で判別不能だった）。
+        from tools.failure_taxonomy import classify
+        self.assertEqual(classify(self._clip(cer_excess=None,
+                                             median_abs_semitones=None)), [])
+
+    def test_several_categories_can_apply_at_once(self):
+        from tools.failure_taxonomy import classify
+        got = classify(self._clip(peak=1e-6, uv_agree=0.5))
+        self.assertIn("silence", got)
+        self.assertIn("voicing", got)
+
+    def test_summarise_counts_clips_per_category(self):
+        from tools.failure_taxonomy import summarise
+        rows = [{"tag": "a", "categories": ["pitch"]},
+                {"tag": "b", "categories": ["pitch", "timbre"]},
+                {"tag": "c", "categories": []}]
+        s = summarise(rows)
+        self.assertEqual(s["counts"]["pitch"], 2)
+        self.assertEqual(s["n_clean"], 1)
+        self.assertEqual(s["n_total"], 3)
+
+    def test_summarise_keeps_the_tags_for_each_category(self):
+        # 「どの clip か」が分からないと後から聴き直せない。
+        from tools.failure_taxonomy import summarise
+        rows = [{"tag": "a", "categories": ["pitch"]}, {"tag": "b", "categories": ["pitch"]}]
+        self.assertEqual(summarise(rows)["tags"]["pitch"], ["a", "b"])
+
