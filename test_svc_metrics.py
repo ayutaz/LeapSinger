@@ -769,3 +769,160 @@ class GuardRailTests(unittest.TestCase):
         v = verdict(rails, preference_winner=None, ours="ours")
         self.assertFalse(v["may_claim_better"])
 
+
+class BatchConvertTests(unittest.TestCase):
+    """複数 clip を 1 プロセスで変換する（M5 の 26 clip を現実的な時間で回すため）。
+
+    **律速はモデルの読み込みです。** 実測で GPU 使用率は 5% しかなく、1 clip ごとに
+    ContentVec と RMVPE を読み直すぶんが所要のほとんどでした。**モデルは 1 度だけ読み、
+    全 clip に使い回します。**
+
+    重いモデルは引数で受け取るので、このテストはネットワークも GPU も使いません。
+    """
+
+    def _job(self, tag, tp=0, start=0.0, seconds=1.0):
+        return {"tag": tag, "path": f"{tag}.wav", "transpose": tp,
+                "start": start, "seconds": seconds}
+
+    def test_models_are_loaded_once_for_the_whole_batch(self):
+        from tools.svc_batch import run_batch
+        loads = []
+
+        def load_models():
+            loads.append(1)
+            return {"model": "m"}
+        run_batch([self._job("a"), self._job("b"), self._job("c")],
+                  load_models=load_models, convert_one=lambda job, models: None)
+        self.assertEqual(len(loads), 1)
+
+    def test_each_job_is_converted_once(self):
+        from tools.svc_batch import run_batch
+        done = []
+        run_batch([self._job("a"), self._job("b")],
+                  load_models=lambda: {}, convert_one=lambda job, m: done.append(job["tag"]))
+        self.assertEqual(done, ["a", "b"])
+
+    def test_a_failing_clip_does_not_abort_the_rest(self):
+        # 26 本の途中で 1 本落ちたときに、そこまでの結果を捨てない。
+        from tools.svc_batch import run_batch
+        done = []
+
+        def convert(job, m):
+            if job["tag"] == "b":
+                raise RuntimeError("boom")
+            done.append(job["tag"])
+        rep = run_batch([self._job("a"), self._job("b"), self._job("c")],
+                        load_models=lambda: {}, convert_one=convert)
+        self.assertEqual(done, ["a", "c"])
+        self.assertEqual(rep["failed"], ["b"])
+
+    def test_the_failure_reason_is_kept(self):
+        from tools.svc_batch import run_batch
+
+        def convert(job, m):
+            raise RuntimeError("特定の理由")
+        rep = run_batch([self._job("a")], load_models=lambda: {}, convert_one=convert)
+        self.assertIn("特定の理由", rep["errors"]["a"])
+
+    def test_already_converted_clips_are_skipped(self):
+        # 途中から再開できること。26 本を最初からやり直さない。
+        from tools.svc_batch import run_batch
+        done = []
+        rep = run_batch([self._job("a"), self._job("b")],
+                        load_models=lambda: {},
+                        convert_one=lambda job, m: done.append(job["tag"]),
+                        is_done=lambda job: job["tag"] == "a")
+        self.assertEqual(done, ["b"])
+        self.assertEqual(rep["skipped"], ["a"])
+
+    def test_models_are_not_loaded_when_everything_is_already_done(self):
+        # 全部済んでいるのに数百 MB を読み込まない。
+        from tools.svc_batch import run_batch
+        loads = []
+        run_batch([self._job("a")], load_models=lambda: loads.append(1),
+                  convert_one=lambda job, m: None, is_done=lambda job: True)
+        self.assertEqual(loads, [])
+
+    def test_a_float_transpose_does_not_break_the_progress_line(self):
+        # **実際に踏んだ。** jobs.tsv は transpose を float で持つのに、進捗表示が :+3d
+        # だったので、**書き出しの後**に例外が出て 16 本が「失敗」と記録された。
+        # 出力は完全なのに失敗と報告されるのが最も危ない（再実行しても is_done で飛ばされる）。
+        from tools.svc_batch import format_progress
+        line = format_progress({"tag": "unseen19", "transpose": 12.0}, seconds=20.0,
+                               elapsed=41.2)
+        self.assertIn("unseen19", line)
+        self.assertIn("+12", line)
+
+    def test_an_int_transpose_formats_the_same_way(self):
+        from tools.svc_batch import format_progress
+        a = format_progress({"tag": "t", "transpose": 12}, seconds=1.0, elapsed=1.0)
+        b = format_progress({"tag": "t", "transpose": 12.0}, seconds=1.0, elapsed=1.0)
+        self.assertEqual(a, b)
+
+    def test_a_negative_transpose_keeps_its_sign(self):
+        from tools.svc_batch import format_progress
+        self.assertIn("-7", format_progress({"tag": "t", "transpose": -7.0},
+                                            seconds=1.0, elapsed=1.0))
+
+    def test_the_report_counts_what_happened(self):
+        from tools.svc_batch import run_batch
+        rep = run_batch([self._job("a"), self._job("b")],
+                        load_models=lambda: {}, convert_one=lambda job, m: None)
+        self.assertEqual(rep["converted"], ["a", "b"])
+        self.assertEqual(rep["n_total"], 2)
+
+
+class ConversionConsistencyTests(unittest.TestCase):
+    """同じ test set の中で変換条件が揃っていること（M5）。
+
+    **実際に混ざりました。** 26 clip のうち 15 本を `svc_convert.py`（chunk 20 秒）、
+    11 本を `svc_batch.py`（当時の既定 10 秒）で作ってしまい、**20 秒の clip では
+    chunk 1 個と 2 個で境界処理が変わります**。比較の土台としては使えません。
+
+    条件は各 clip の `*_convert.json` に残るので、**測る前に揃っているかを確かめます。**
+    """
+
+    def _rec(self, **kw):
+        base = {"ckpt": "c.pt", "spk_id": 22, "num_steps": 1, "device": "cuda",
+                "chunk_sec": 20.0}
+        base.update(kw)
+        return base
+
+    def test_a_consistent_set_passes(self):
+        from tools.svc_batch import check_consistent
+        r = check_consistent([self._rec(), self._rec(), self._rec()])
+        self.assertTrue(r["consistent"])
+
+    def test_a_differing_chunk_size_is_caught(self):
+        from tools.svc_batch import check_consistent
+        r = check_consistent([self._rec(chunk_sec=20.0), self._rec(chunk_sec=10.0)])
+        self.assertFalse(r["consistent"])
+        self.assertIn("chunk_sec", r["differing"])
+
+    def test_a_differing_checkpoint_is_caught(self):
+        from tools.svc_batch import check_consistent
+        r = check_consistent([self._rec(ckpt="a.pt"), self._rec(ckpt="b.pt")])
+        self.assertIn("ckpt", r["differing"])
+
+    def test_a_differing_device_is_caught(self):
+        # CPU と GPU は bit 一致しない。同じ set に混ぜない。
+        from tools.svc_batch import check_consistent
+        r = check_consistent([self._rec(device="cpu"), self._rec(device="cuda")])
+        self.assertIn("device", r["differing"])
+
+    def test_per_clip_fields_are_not_compared(self):
+        # transpose や start は clip ごとに違って当然。ここを条件違いと呼ばない。
+        from tools.svc_batch import check_consistent
+        r = check_consistent([self._rec(transpose=0, start=0.0),
+                              self._rec(transpose=12, start=42.0)])
+        self.assertTrue(r["consistent"])
+
+    def test_a_missing_field_is_reported_not_ignored(self):
+        # 古い形式の json（chunk_sec を持たない）が混ざったら気づけること。
+        from tools.svc_batch import check_consistent
+        rec = self._rec()
+        del rec["chunk_sec"]
+        r = check_consistent([self._rec(), rec])
+        self.assertFalse(r["consistent"])
+        self.assertIn("chunk_sec", r["differing"])
+
