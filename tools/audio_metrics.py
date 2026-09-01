@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
-# NHVSing V3 の mel は 40–16000 Hz なので、それより上は元から入っていない。
+# NHVSing V3 の mel は 40-16000 Hz なので、それより上は元から入っていない。
 BANDS = ((0, 1000), (1000, 2000), (2000, 4000), (4000, 8000), (8000, 16000))
 
 

@@ -38,7 +38,7 @@ def compare_metric(ours: Sequence[float], theirs: Sequence[float], *,
                    higher_is_better: bool) -> dict[str, Any]:
     """2 系列を比べ、**ばらつきを超えて悪いか**を返す。
 
-    差の標準誤差（2 標本）を閾値にします。**平均だけを比べません** — clip ごとのばらつきが
+    差の標準誤差（2 標本）を閾値にします。**平均だけを比べません**  -  clip ごとのばらつきが
     大きい指標では、平均の差が偶然の範囲に収まることがあるためです。
     """
     a = np.asarray(list(ours), dtype=np.float64)
@@ -139,7 +139,7 @@ def main() -> int:
               f"  差 {r['diff']:+.4f}（閾値 {r['threshold']:.4f}）")
     print(f"\n  preference: {winner or '（判定なし）'}")
     print(f"  **「より良い」と書けるか: {'はい' if v['may_claim_better'] else 'いいえ'}** "
-          f"— {v['reason']}")
+          f" -  {v['reason']}")
     if a.out:
         Path(a.out).parent.mkdir(parents=True, exist_ok=True)
         Path(a.out).write_text(json.dumps(rep, ensure_ascii=False, indent=1), encoding="utf-8")

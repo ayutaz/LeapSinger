@@ -494,6 +494,46 @@ class TestSetTests(unittest.TestCase):
         got = segment_holdout(songs, n=3, seconds=20.0, seed=0)
         self.assertGreater(max(c["start"] for c in got), 100.0)
 
+    def test_segments_are_chosen_where_the_singer_is_actually_singing(self):
+        # **実際に踏んだ。** 曲を等分して窓の中でずらすと、イントロや間奏が選ばれる。
+        # hold-out 6 本のうち 3 本が有声率 3.5〜34% になり、話者性を測れなくなった
+        # （リツ本人の source が参照と 0.39 しか一致しない = 上限 0.67 から大きく外れる）。
+        from tools.m5_testset import segment_holdout
+        # 前半 100 秒は無声、後半 200 秒が有声、という曲を模す
+        def voiced_ratio(path, start, seconds):
+            return 0.05 if start < 100.0 else 0.9
+        songs = [{"speaker": "ritsu", "gender": "female", "song": "a", "path": "a.wav",
+                  "full_seconds": 300.0, "kind": "holdout"}]
+        got = segment_holdout(songs, n=3, seconds=20.0, seed=0,
+                              voiced_ratio=voiced_ratio, min_voiced=0.5)
+        for c in got:
+            self.assertGreaterEqual(c["start"], 100.0, f"無声区間が選ばれた: {c}")
+
+    def test_the_voiced_ratio_is_recorded_for_each_segment(self):
+        # 後から「なぜこの区間か」を見られるようにする。
+        from tools.m5_testset import segment_holdout
+        songs = [{"speaker": "ritsu", "gender": "female", "song": "a", "path": "a.wav",
+                  "full_seconds": 300.0, "kind": "holdout"}]
+        got = segment_holdout(songs, n=2, seconds=20.0, seed=0,
+                              voiced_ratio=lambda p, s, d: 0.8, min_voiced=0.5)
+        self.assertAlmostEqual(got[0]["voiced_ratio"], 0.8)
+
+    def test_it_refuses_when_no_segment_is_voiced_enough(self):
+        # 黙って無声区間を返さない。素材か閾値を見直させる。
+        from tools.m5_testset import segment_holdout
+        songs = [{"speaker": "ritsu", "gender": "female", "song": "a", "path": "a.wav",
+                  "full_seconds": 300.0, "kind": "holdout"}]
+        with self.assertRaises(ValueError):
+            segment_holdout(songs, n=2, seconds=20.0, seed=0,
+                            voiced_ratio=lambda p, s, d: 0.1, min_voiced=0.5)
+
+    def test_without_a_voiced_check_the_old_behaviour_is_kept(self):
+        from tools.m5_testset import segment_holdout
+        songs = [{"speaker": "ritsu", "gender": "female", "song": "a", "path": "a.wav",
+                  "full_seconds": 300.0, "kind": "holdout"}]
+        got = segment_holdout(songs, n=3, seconds=20.0, seed=0)
+        self.assertEqual(len(got), 3)
+
     def test_it_refuses_a_song_too_short_to_yield_its_share(self):
         from tools.m5_testset import segment_holdout
         songs = [{"speaker": "ritsu", "gender": "female", "song": "a", "path": "a.wav",
@@ -605,6 +645,33 @@ class BlindPreferenceTests(unittest.TestCase):
         got = [r["clip"] for r in assign_sides(clips, systems=("x", "y"), seed=1)]
         self.assertNotEqual(got, clips)
         self.assertEqual(sorted(got), sorted(clips))
+
+    def test_clip_tags_are_read_from_either_naming(self):
+        # LeapSVC は `<name>__<tag>_converted.wav`、正規化した baseline は
+        # `<tag>_converted.wav`。**どちらからも同じ tag が取れること。**
+        from tools.blind_test import clip_tag
+        self.assertEqual(clip_tag("m10_dona__unseen00_converted.wav"), "unseen00")
+        self.assertEqual(clip_tag("unseen00_converted.wav"), "unseen00")
+
+    def test_finding_clips_pairs_the_two_systems_by_tag(self):
+        from tools.blind_test import find_clips
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "a").mkdir()
+            (root / "b").mkdir()
+            (root / "a" / "song__unseen00_converted.wav").write_bytes(b"x")
+            (root / "b" / "unseen00_converted.wav").write_bytes(b"x")
+            a, b = find_clips(root / "a"), find_clips(root / "b")
+            self.assertEqual(sorted(set(a) & set(b)), ["unseen00"])
+
+    def test_source_and_ceiling_files_are_not_treated_as_clips(self):
+        from tools.blind_test import find_clips
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for n in ("x__unseen00_converted.wav", "x__unseen00_source.wav",
+                      "x__unseen00_vocoder_only.wav"):
+                (root / n).write_bytes(b"x")
+            self.assertEqual(sorted(find_clips(root)), ["unseen00"])
 
     def test_tally_counts_votes_per_system_not_per_side(self):
         from tools.blind_test import tally

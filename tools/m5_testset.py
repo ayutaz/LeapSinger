@@ -93,8 +93,13 @@ def select_clips(pool: Sequence[dict[str, Any]], *, n: int, seed: int,
     return out
 
 
-def segment_holdout(songs: Sequence[dict[str, Any]], *, n: int, seconds: float,
-                    seed: int) -> list[dict[str, Any]]:
+# hold-out 区間に要求する有声率の下限。**歌っていない区間では話者性を測れません。**
+MIN_VOICED = 0.6
+
+
+def segment_holdout(songs: Sequence[dict[str, Any]], *, n: int, seconds: float, seed: int,
+                    voiced_ratio: Any = None,
+                    min_voiced: float = MIN_VOICED) -> list[dict[str, Any]]:
     """hold-out 曲から**重ならない**区間を `n` 本切り出す。
 
     hold-out は 3 曲しかありませんが 1 曲 3〜5 分あります。**曲単位 split を保ったまま**
@@ -102,7 +107,12 @@ def segment_holdout(songs: Sequence[dict[str, Any]], *, n: int, seconds: float,
 
     - 各曲へ本数を均等に割り当てる
     - **区間は重ねない**（同じところを 2 回測ると n を水増ししただけになる）
-    - **曲全体へ散らす**（曲頭に固まるとイントロばかりになり、無声率が高くて検証に向かない）
+    - **歌っている区間を選ぶ**（`voiced_ratio` を渡したとき）
+
+    **有声率の下限が要る理由（実測）:** 窓の中でランダムにずらすだけだと、イントロや間奏が
+    選ばれます。6 本中 3 本が有声率 3.5〜34% になり、**リツ本人の source が参照と 0.39 しか
+    一致しない**（上限 0.67）状態になりました。歌っていない区間では話者性を測れません。
+    前処理が `--min-voiced` で無声 chunk を捨てているのと同じ理由です。
     """
     if not songs:
         raise ValueError("hold-out 曲がありません")
@@ -118,14 +128,45 @@ def segment_holdout(songs: Sequence[dict[str, Any]], *, n: int, seconds: float,
             raise ValueError(
                 f"曲 {song.get('song')!r} は {full:.1f} 秒しかなく、{seconds} 秒 x {want} 本を"
                 "重ねずに取れません（区間を重ねると n を水増ししただけになります）")
-        # 曲を want 個の窓へ等分し、各窓の中でずらす。**窓をまたがないので重ならない。**
-        span = full / want
-        for k in range(want):
-            slack = max(0.0, span - seconds)
-            start = k * span + rng.uniform(0.0, slack)
+        if voiced_ratio is None:
+            # 有声率を見ないときは、曲を want 個の窓へ等分して各窓の中でずらす。
+            span = full / want
+            starts = [(k * span + rng.uniform(0.0, max(0.0, span - seconds)), None)
+                      for k in range(want)]
+        else:
+            # **曲全体**を走査して有声率が下限を超える候補を集め、そこから重ならないように選ぶ。
+            # 窓に縛ると、イントロや間奏が前半に固まっている曲で候補が尽きます（実際の曲は
+            # そういう構造が普通）。
+            step = max(seconds / 4.0, 1.0)
+            cands = []
+            t = 0.0
+            while t + seconds <= full + 1e-9:
+                vr = float(voiced_ratio(song["path"], t, seconds))
+                if vr >= min_voiced:
+                    cands.append((t, vr))
+                t += step
+            if len(cands) == 0:
+                raise ValueError(
+                    f"曲 {song.get('song')!r} に、有声率 {min_voiced:.0%} 以上の {seconds} 秒"
+                    "区間がありません。**歌っていない区間では話者性を測れません**"
+                    "（素材か閾値を見直してください）")
+            rng.shuffle(cands)
+            starts = []
+            for t, vr in cands:
+                if all(abs(t - u) >= seconds for u, _ in starts):   # 重ならないものだけ
+                    starts.append((t, vr))
+                if len(starts) == want:
+                    break
+            if len(starts) < want:
+                raise ValueError(
+                    f"曲 {song.get('song')!r} から、有声率 {min_voiced:.0%} 以上で重ならない "
+                    f"{seconds} 秒区間を {want} 本取れません（取れたのは {len(starts)} 本）")
+        for k, (start, vr) in enumerate(sorted(starts)):
             c = dict(song)
             c.update({"start": float(start), "seconds": float(seconds),
                       "clip": f"{song.get('song')}_{k}", "transpose": 0})
+            if vr is not None:
+                c["voiced_ratio"] = float(vr)
             out.append(c)
     return out
 
@@ -133,7 +174,9 @@ def segment_holdout(songs: Sequence[dict[str, Any]], *, n: int, seconds: float,
 def build_testset(unseen: Sequence[dict[str, Any]], holdout: Sequence[dict[str, Any]], *,
                   n_unseen: int, n_holdout: int, seed: int,
                   min_seconds: float = MIN_SECONDS,
-                  clip_seconds: float | None = None) -> dict[str, Any]:
+                  clip_seconds: float | None = None,
+                  voiced_ratio: Any = None,
+                  min_voiced: float = MIN_VOICED) -> dict[str, Any]:
     """未知 source と target hold-out を分けて選び、移調量まで決めて返す。
 
     **移調を運用者に任せません。** 男性 source を移調し忘れると、モデルではなく source と
@@ -151,7 +194,8 @@ def build_testset(unseen: Sequence[dict[str, Any]], holdout: Sequence[dict[str, 
     else:
         # 曲数が足りないときは、**曲単位 split を保ったまま**区間へ分ける。
         hold = segment_holdout(usable_hold, n=n_holdout,
-                               seconds=float(clip_seconds or min_seconds), seed=seed + 1)
+                               seconds=float(clip_seconds or min_seconds), seed=seed + 1,
+                               voiced_ratio=voiced_ratio, min_voiced=min_voiced)
     for c in hold:
         # target 自身の曲は音域が合っている。移調すると別の実験になる。
         c["transpose"] = 0
@@ -181,6 +225,34 @@ def _scan_vocalset(root: Path, glob: str) -> list[dict[str, Any]]:
                         "path": str(w), "seconds": float(sf.info(w).duration),
                         "kind": "unseen"})
     return out
+
+
+def measure_voiced_ratio(path: str, start: float, seconds: float, *,
+                         frame: int = 2048, rel_threshold: float = 0.01) -> float:
+    """区間の有声率（振幅が曲全体の peak の `rel_threshold` 倍を超えるフレームの割合）。
+
+    **F0 抽出器は使いません。** 区間を選ぶだけなので、重い RMVPE を全候補に当てるより
+    振幅で足ります。歌声とイントロ・間奏を分けるのが目的です。
+    """
+    import numpy as np
+    import soundfile as sf
+
+    info = sf.info(path)
+    sr = info.samplerate
+    a = int(start * sr)
+    n = int(seconds * sr)
+    seg, _ = sf.read(path, dtype="float32", start=a, frames=n, always_2d=False)
+    if seg.ndim > 1:
+        seg = seg.mean(axis=1)
+    if seg.size < frame:
+        return 0.0
+    full, _ = sf.read(path, dtype="float32", always_2d=False)
+    if full.ndim > 1:
+        full = full.mean(axis=1)
+    thr = rel_threshold * float(np.abs(full).max())
+    rms = [float(np.sqrt(np.mean(seg[i:i + frame] ** 2)))
+           for i in range(0, seg.size - frame, frame)]
+    return float(np.mean([r > thr for r in rms])) if rms else 0.0
 
 
 def _scan_target(root: Path, songs: Sequence[str], seconds: float) -> list[dict[str, Any]]:
@@ -216,6 +288,9 @@ def main() -> int:
     ap.add_argument("--n-unseen", type=int, default=20)
     ap.add_argument("--n-holdout", type=int, default=6)
     ap.add_argument("--seconds", type=float, default=20.0, help="各 clip から切り出す長さ")
+    ap.add_argument("--min-voiced", type=float, default=MIN_VOICED,
+                    help="hold-out 区間に要求する有声率の下限。**歌っていない区間では"
+                         "話者性を測れない**（実測で 3.5%% の区間が選ばれた）")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
@@ -231,7 +306,8 @@ def main() -> int:
     print(f"[testset] pool: 未知 source {len(unseen)} clip / hold-out {len(holdout)} clip")
 
     ts = build_testset(unseen, holdout, n_unseen=a.n_unseen, n_holdout=a.n_holdout,
-                       seed=a.seed, clip_seconds=a.seconds)
+                       seed=a.seed, clip_seconds=a.seconds,
+                       voiced_ratio=measure_voiced_ratio, min_voiced=a.min_voiced)
     ts["manifest"]["unseen_root"] = str(a.unseen_root)
     ts["manifest"]["unseen_glob"] = a.unseen_glob
     ts["manifest"]["target_root"] = str(a.target_root)
@@ -241,7 +317,9 @@ def main() -> int:
     n_m = sum(1 for c in ts["unseen"] if c["gender"] == "male")
     print(f"  未知 source {len(ts['unseen'])} clip（男 {n_m} / 女 {len(ts['unseen']) - n_m}）"
           f"、うち男性は +{MALE_TRANSPOSE} 半音")
-    print(f"  hold-out    {len(ts['holdout'])} clip（移調なし）")
+    vrs = [c.get("voiced_ratio") for c in ts["holdout"] if c.get("voiced_ratio") is not None]
+    print(f"  hold-out    {len(ts['holdout'])} clip（移調なし）"
+          + (f"、有声率 {min(vrs) * 100:.0f}〜{max(vrs) * 100:.0f}%" if vrs else ""))
     for c in ts["unseen"][:4]:
         print(f"    {c['speaker']:9s} {c['clip']:28s} tp={c['transpose']:+d}")
     if a.out:

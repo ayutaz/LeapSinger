@@ -689,6 +689,22 @@ class ToolHelpTests(unittest.TestCase):
             with self.subTest(tool=name):
                 self.assertIn("usage", self._help_text(name).lower())
 
+    def test_no_tool_source_contains_characters_cp932_cannot_encode(self):
+        """**help だけでは足りません。** 実行時の print に em-dash を書いて落ちました
+        （`guard_rail.py`。`nhv_indist.py` で同じ誤りを直した後です）。開発機は日本語
+        Windows なので、cp932 で書けない文字はソースのどこにあっても実行時に落ちます。
+        """
+        bad = []
+        for f in sorted(Path(__file__).parent.glob("tools/**/*.py")):
+            text = f.read_text(encoding="utf-8")
+            for i, line in enumerate(text.split("\n"), 1):
+                try:
+                    line.encode("cp932")
+                except UnicodeEncodeError as e:
+                    ch = line[e.start:e.end]
+                    bad.append(f"{f.name}:{i} {ch!r}")
+        self.assertEqual(bad, [], "cp932 で書けない文字がある（実行時に落ちます）")
+
     def test_help_text_survives_a_cp932_console(self):
         # 開発機は日本語 Windows。cp932 で書けない文字を help に入れると、使う瞬間に落ちる。
         for name in self.TOOLS:

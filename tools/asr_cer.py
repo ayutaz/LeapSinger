@@ -54,7 +54,7 @@ Transcribe = Callable[[Any], str]
 # 「音響モデルは劣化させていない」と読めてしまうので、そのときは差を出しません。
 CEILING_MAX_CER = 0.5
 
-_DROP = re.compile(r"[\s、。，．,\.!！?？「」『』（）\(\)・…ー~〜\-—:：;；\"'`]")
+_DROP = re.compile(r"[\s、。，．,\.!！?？「」『』（）\(\)・…ー~〜\- - :：;；\"'`]")
 
 
 def normalize_ja(text: str) -> str:

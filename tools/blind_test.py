@@ -34,6 +34,26 @@ from pathlib import Path
 from typing import Any
 
 
+def clip_tag(name: str) -> str:
+    """変換結果のファイル名から clip の tag を取る。
+
+    LeapSVC は `<name>__<tag>_converted.wav`、正規化した baseline は `<tag>_converted.wav`
+    です。**どちらからも同じ tag が取れないと、2 系を対にできません。**
+    """
+    stem = str(name)
+    if stem.endswith("_converted.wav"):
+        stem = stem[: -len("_converted.wav")]
+    return stem.split("__")[-1]
+
+
+def find_clips(root: Path) -> dict[str, Path]:
+    """`*_converted.wav` を tag -> path で返す。
+
+    **source と上限は clip として数えません**（同じ tag で 3 本になり、対応が壊れます）。
+    """
+    return {clip_tag(p.name): p for p in sorted(Path(root).glob("*_converted.wav"))}
+
+
 def assign_sides(clips: Sequence[str], *, systems: tuple[str, str],
                  seed: int) -> list[dict[str, str]]:
     """clip ごとに A / B の割り当てと提示順を決める。
@@ -103,12 +123,7 @@ def _cmd_prepare(a) -> int:
     import shutil
 
     a_dir, b_dir = Path(a.a), Path(a.b)
-    a_clips = {p.name.split("__")[-1].replace("_converted.wav", ""): p
-               for p in sorted(a_dir.glob("*_converted.wav"))}
-    b_clips = {}
-    for p in sorted(b_dir.rglob("*.wav")):
-        tag = p.parent.name if p.parent != b_dir else p.stem
-        b_clips.setdefault(tag, p)
+    a_clips, b_clips = find_clips(a_dir), find_clips(b_dir)
     shared = sorted(set(a_clips) & set(b_clips))
     if not shared:
         sys.exit(f"共通の clip がありません（{a.a}: {len(a_clips)} / {a.b}: {len(b_clips)}）")
