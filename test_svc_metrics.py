@@ -7,7 +7,9 @@
 重いモデル（ASR / SQUIM）は**引数で受け取り**ます。単体テストはネットワークも GPU も使いません。
 """
 
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -649,4 +651,52 @@ class BlindPreferenceTests(unittest.TestCase):
                  + [{"clip": f"b{i}", "A": "x", "B": "y", "vote": "B"} for i in range(5)])
         got = tally(sheet)
         self.assertGreater(got["p_two_sided"], 0.5)
+
+
+class NormaliseOutputsTests(unittest.TestCase):
+    """外部 baseline の出力を、測定ツールが読める形へ揃える（M5）。
+
+    Seed-VC は `<tag>/vc_<tag>__<ref>_<...>.wav` に書き、LeapSVC は
+    `<name>__<tag>_converted.wav` に書きます。**測定ツールは後者の形しか読みません。**
+
+    **source をコピーで作らず、必ず同じ区間から取ること。** timing と CER は source を
+    基準にするので、別の区間を source として置くと比較が壊れます。
+    """
+
+    def test_it_pairs_each_tag_with_its_converted_file(self):
+        from tools.normalise_outputs import find_seedvc_outputs
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for tag in ("unseen00", "holdout01"):
+                (root / tag).mkdir()
+                (root / tag / f"vc_{tag}__ref_1.0_30_0.7.wav").write_bytes(b"x")
+            got = find_seedvc_outputs(root)
+            self.assertEqual(sorted(got), ["holdout01", "unseen00"])
+
+    def test_it_ignores_the_segments_and_reference_files(self):
+        from tools.normalise_outputs import find_seedvc_outputs
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "_segments").mkdir()
+            (root / "_segments" / "unseen00.wav").write_bytes(b"x")
+            (root / "_target_ref.wav").write_bytes(b"x")
+            (root / "unseen01").mkdir()
+            (root / "unseen01" / "vc_unseen01__ref.wav").write_bytes(b"x")
+            self.assertEqual(sorted(find_seedvc_outputs(root)), ["unseen01"])
+
+    def test_a_tag_with_two_outputs_is_rejected_rather_than_guessed(self):
+        # 設定違いの出力が両方残っていると、どちらを測ったのか分からなくなる。
+        from tools.normalise_outputs import find_seedvc_outputs
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "unseen00").mkdir()
+            (root / "unseen00" / "vc_unseen00__ref_1.0_30_0.7.wav").write_bytes(b"x")
+            (root / "unseen00" / "vc_unseen00__ref_1.0_50_0.7.wav").write_bytes(b"x")
+            with self.assertRaises(ValueError):
+                find_seedvc_outputs(root)
+
+    def test_the_normalised_name_matches_what_the_metrics_expect(self):
+        from tools.normalise_outputs import normalised_name
+        self.assertEqual(normalised_name("unseen00", "converted"), "unseen00_converted.wav")
+        self.assertEqual(normalised_name("unseen00", "source"), "unseen00_source.wav")
 

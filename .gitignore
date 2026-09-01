@@ -48,6 +48,11 @@ download/
 !checkpoints/nhv_v3.onnx
 !checkpoints/nhv_v3x.onnx
 
+# ── HuggingFace caches that external tools write into checkpoints/ (Seed-VC does
+#    this, relative to its cwd). Multi-GB, and they belong to other projects.
+checkpoints/hf_cache/
+checkpoints/models--*/
+
 # ── Distributable OpenUTAU voicebanks (GitHub Releases Assets, not tracked)
 checkpoints/leapsinger_oni_nat_ritsu/
 *.zip
