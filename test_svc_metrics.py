@@ -673,6 +673,70 @@ class BlindPreferenceTests(unittest.TestCase):
                 (root / n).write_bytes(b"x")
             self.assertEqual(sorted(find_clips(root)), ["unseen00"])
 
+    def test_loudness_is_matched_before_presenting(self):
+        """**実際に踏んだ。** LeapSVC の出力は Seed-VC の 5.4 倍大きく（RMS 0.143 対 0.027）、
+        **音量だけで system を当てられる状態**でした。事前登録した条件は「両システムの出力に
+        同じ loudness 揃えを当てる」です。人は大きいほうを好むので、揃えないと preference が
+        音量の選好になります。
+        """
+        from tools.blind_test import match_loudness
+        a = (np.ones(1000, dtype=np.float32) * 0.5)
+        b = (np.ones(1000, dtype=np.float32) * 0.05)
+        ma, mb = match_loudness(a, b)
+        rms = lambda x: float(np.sqrt(np.mean(x ** 2)))
+        self.assertAlmostEqual(rms(ma), rms(mb), places=4)
+
+    def test_matching_does_not_clip(self):
+        # 揃えるために持ち上げて 1.0 を超えると、歪みが preference に化ける。
+        from tools.blind_test import match_loudness
+        a = np.ones(1000, dtype=np.float32) * 0.9
+        b = np.ones(1000, dtype=np.float32) * 0.05
+        for x in match_loudness(a, b):
+            self.assertLessEqual(float(np.abs(x).max()), 1.0)
+
+    def test_the_quieter_side_is_raised_not_only_the_louder_lowered(self):
+        # 両方下げると聴きづらくなる。**目標 RMS へ揃える**。
+        from tools.blind_test import match_loudness
+        a = np.ones(1000, dtype=np.float32) * 0.5
+        b = np.ones(1000, dtype=np.float32) * 0.05
+        ma, mb = match_loudness(a, b)
+        self.assertGreater(float(np.abs(mb).max()), 0.05)
+
+    def test_silence_does_not_blow_up(self):
+        from tools.blind_test import match_loudness
+        a = np.zeros(1000, dtype=np.float32)
+        b = np.ones(1000, dtype=np.float32) * 0.1
+        for x in match_loudness(a, b):
+            self.assertTrue(np.all(np.isfinite(x)))
+
+    def test_a_paired_file_puts_a_then_b_with_a_gap(self):
+        """26 ペアを A/B 別ファイルで聴くと切り替えの手間が大きい。**1 本に繋いだ形**も
+        用意します。**A -> 無音 -> B** の順で、境目が分かるようにします。
+        """
+        from tools.blind_test import concat_pair
+        a = np.ones(100, dtype=np.float32) * 0.5
+        b = np.ones(100, dtype=np.float32) * 0.3
+        out = concat_pair(a, b, sr=100, gap_sec=0.5)
+        self.assertEqual(len(out), 100 + 50 + 100)
+        self.assertAlmostEqual(float(out[0]), 0.5, places=5)
+        self.assertAlmostEqual(float(out[-1]), 0.3, places=5)
+
+    def test_the_gap_is_actually_silent(self):
+        from tools.blind_test import concat_pair
+        a = np.ones(100, dtype=np.float32) * 0.5
+        b = np.ones(100, dtype=np.float32) * 0.3
+        out = concat_pair(a, b, sr=100, gap_sec=0.5)
+        self.assertEqual(float(np.abs(out[100:150]).max()), 0.0)
+
+    def test_concatenation_does_not_renormalise(self):
+        # ここで音量を触ると、揃えた意味が消える。
+        from tools.blind_test import concat_pair
+        a = np.ones(100, dtype=np.float32) * 0.5
+        b = np.ones(100, dtype=np.float32) * 0.3
+        out = concat_pair(a, b, sr=100, gap_sec=0.1)
+        self.assertAlmostEqual(float(out[:100].max()), 0.5, places=5)
+        self.assertAlmostEqual(float(out[-100:].max()), 0.3, places=5)
+
     def test_tally_counts_votes_per_system_not_per_side(self):
         from tools.blind_test import tally
         sheet = [{"clip": "c0", "A": "x", "B": "y", "vote": "A"},

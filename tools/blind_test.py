@@ -34,6 +34,43 @@ from pathlib import Path
 from typing import Any
 
 
+def match_loudness(a, b, *, peak_limit: float = 0.95):
+    """2 本の波形を**同じ RMS へ揃える**。
+
+    **揃えないと blind になりません。** 実測で LeapSVC の出力は Seed-VC の 5.4 倍大きく
+    （RMS 0.143 対 0.027）、**音量だけで system を当てられる状態**でした。人は大きいほうを
+    好むので、preference が音量の選好に化けます。
+
+    **クリップさせません。** 揃えるために持ち上げて 1.0 を超えると、歪みが preference に
+    化けます。両方が `peak_limit` に収まる範囲で、できるだけ大きい共通の RMS を選びます。
+    """
+    import numpy as np
+
+    xs = [np.asarray(x, dtype=np.float32).copy() for x in (a, b)]
+    rms = [float(np.sqrt(np.mean(x ** 2))) for x in xs]
+    peak = [float(np.abs(x).max()) for x in xs]
+    if min(rms) <= 1e-9:
+        return tuple(xs)                       # 無音が混ざっていたら触らない
+
+    # 各波形が peak_limit を超えない最大の RMS。その最小値を共通の目標にする。
+    headroom = [peak_limit / p * r for p, r in zip(peak, rms, strict=True) if p > 1e-9]
+    target = min(headroom) if headroom else min(rms)
+    return tuple((x * (target / r)).astype(np.float32) for x, r in zip(xs, rms, strict=True))
+
+
+def concat_pair(a, b, *, sr: int, gap_sec: float = 0.7):
+    """A -> 無音 -> B を 1 本に繋ぐ。**音量は触りません**（揃えた意味が消えるため）。
+
+    26 ペアを A/B 別ファイルで聴くと切り替えの手間が大きいので、繋いだ形も置きます。
+    """
+    import numpy as np
+
+    gap = np.zeros(int(gap_sec * sr), dtype=np.float32)
+    return np.concatenate([np.asarray(a, dtype=np.float32),
+                           gap,
+                           np.asarray(b, dtype=np.float32)]).astype(np.float32)
+
+
 def clip_tag(name: str) -> str:
     """変換結果のファイル名から clip の tag を取る。
 
@@ -120,7 +157,6 @@ def tally(sheet: Sequence[dict[str, Any]]) -> dict[str, Any]:
 
 def _cmd_prepare(a) -> int:
     import json
-    import shutil
 
     a_dir, b_dir = Path(a.a), Path(a.b)
     a_clips, b_clips = find_clips(a_dir), find_clips(b_dir)
@@ -134,17 +170,34 @@ def _cmd_prepare(a) -> int:
     out = Path(a.out)
     (out / "audio").mkdir(parents=True, exist_ok=True)
     src = {a.a_name: a_clips, a.b_name: b_clips}
+    import soundfile as sf
+
     key, sheet = [], ["pair,clip,vote  # vote に A / B / tie を書く"]
     for i, row in enumerate(rows):
         pair = f"pair{i:02d}"
+        # **同じ loudness 揃えを両側へ当てる**（事前登録した条件）。コピーでは駄目。
+        wavs, srs = [], []
         for side in ("A", "B"):
-            shutil.copyfile(src[row[side]][row["clip"]], out / "audio" / f"{pair}_{side}.wav")
+            w, sr = sf.read(src[row[side]][row["clip"]], dtype="float32", always_2d=False)
+            if w.ndim > 1:
+                w = w.mean(axis=1)
+            wavs.append(w)
+            srs.append(sr)
+        if srs[0] != srs[1]:
+            sys.exit(f"{pair}: sample rate が違います（{srs}）。揃えてから比べること")
+        matched = match_loudness(*wavs)
+        for side, w in zip(("A", "B"), matched, strict=True):
+            sf.write(out / "audio" / f"{pair}_{side}.wav", w, srs[0])
+        # 続けて聴ける形（A -> 無音 -> B）。切り替えの手間を減らす。
+        (out / "paired").mkdir(parents=True, exist_ok=True)
+        sf.write(out / "paired" / f"{pair}_AB.wav", concat_pair(*matched, sr=srs[0]), srs[0])
         key.append({"pair": pair, **row})
         sheet.append(f"{pair},{row['clip']},")
     (out / "key.json").write_text(json.dumps(key, ensure_ascii=False, indent=1),
                                  encoding="utf-8")
     (out / "sheet.csv").write_text("\n".join(sheet) + "\n", encoding="utf-8")
     print(f"  -> {out}/audio （**system 名は出ません**）")
+    print(f"  -> {out}/paired （A -> 無音 -> B を 1 本にしたもの。続けて聴ける）")
     print(f"  -> {out}/sheet.csv （vote 列を埋める）")
     print(f"  -> {out}/key.json （集計まで見ないこと）")
     return 0
