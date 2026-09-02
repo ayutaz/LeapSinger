@@ -195,10 +195,16 @@ pre-registered singing calibration, and it shows the fine-tune does move the voi
 target (recovery from the floor rises from 45.1% to 54.9%).
 
 **An objective comparison against Seed-VC has been run** (26 clips, matched conditions).
-**Seed-VC is ahead on speaker similarity** (0.4712 vs 0.5912), and our pre-registered decision
-rule therefore forbids claiming LeapSVC is better. **LeapSVC is ahead on pitch fidelity**
-(F0 correlation 0.9996, median deviation 0.01 semitones) **and voicing agreement (99.2%)** --
-which is what conditioning directly on F0 buys. **The blind listening test and the real-time
+**Seed-VC is ahead on speaker similarity** (0.4981 vs 0.5912), and our pre-registered decision
+rule therefore forbids claiming LeapSVC is better. **LeapSVC is ahead on pitch fidelity
+(F0 correlation 0.9994), voicing agreement (99.0%) and timing (73.7% vs 70.8%)** -- which is
+what conditioning directly on F0 buys.
+
+**The weak speaker identity turned out to be over-smoothing**: the predicted mel carried only
+75% of ground truth's fine detail. The vocoder and the mel representation were not at fault,
+no source-speaker identity leaked through, and speaker conditioning worked. Enabling the GAN
+during fine-tuning moved unseen-source recovery from 69.4% to 75.3% (Seed-VC 77.1%) **without
+costing content preservation or pitch fidelity**. **The blind listening test and the real-time
 student are not done yet.**
 The Japanese research suite covering requirements, architecture, data/GPU, training,
 evaluation, prior art/licensing, implementation status, and sources is indexed at

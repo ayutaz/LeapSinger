@@ -85,6 +85,9 @@ uv run python tools/vast.py create <offer_id> --disk 60 --yes
 | Windows から書いたスクリプトを `bash -s` で流すと `set: pipefail: invalid option name` | **CRLF が混ざっている。** Python で書くなら `write_text` に `newline="\n"` を渡す |
 | `set -euo pipefail` のスクリプトが nvidia-smi の直後に無言で死ぬ | `cmd \| tee f \| head` の **SIGPIPE**。`head` が先に閉じると `pipefail` + `set -e` で run 全体が落ちる。**先頭数行だけ見る用途で `head` をパイプの末尾に置かない** |
 | `show instances` が日本語 Windows で `'cp932' codec can't encode character` で落ちる | `tools/vast.py` が出力を UTF-8 で受けてから安全に表示するようにした |
+| 突然どのコマンドも `ImportError: DLL load failed while importing _socket` で落ちる | **uv の shim が壊れた Python を参照している。** `uv tool install --reinstall` では直らない（壊れているのは shim の側）。`tools/vast.py` はツール環境の Python から `-m vastai.cli.main` へ落ちるようにした |
+| その fallback も同じエラーで落ちる | **`uv run` が `PYTHONHOME` を子へ継承している。** ツール環境の Python が親の標準ライブラリを読みに行く。`_child_env()` が親を指す変数だけ落とす |
+| アカウントに**他の実験のインスタンス**が動いている | `label` で見分ける（実測: 自分の SVC 実験と、別プロジェクトの Beatrice 学習が同居していた）。**自分のもの以外は触らない** |
 | `create` の応答に **`instance_api_key` が平文で出る** | `tools/vast.py` が伏せるようにした。**ログにもチャットにも残さない** |
 
 ### 3c. M3 で追加で踏んだこと（2026-08-30）
@@ -185,6 +188,11 @@ scp -i ~/.ssh/id_ed25519_vast -P <port> -r root@<host>:/root/LeapSinger/log/<run
 ```
 
 学習中も定期的に退避する。インスタンスは落ちることがある。
+
+**checkpoint は学習中から回収する（今回そうして効果があった）。** 2,500 step ごとに
+出るたび scp で引き取り、**学習と並行して評価まで進めました**。M4 で 40 分ぶん空回しさせた
+のに対し、今回は学習完了から破棄まで数分です。**早い checkpoint で結果の傾向が見えるので、
+最後まで待つ必要がない**という利点もあります（実測で 2,500 step で既に目標を超えていた）。
 
 **回収の遅さがそのまま料金になる。** M4 では 141 MB の checkpoint 3 本の scp に時間がかかり、
 **約 40 分ぶんインスタンスを空回し**させました（実費 $0.75 は見積もり $0.35 の 2.1 倍。

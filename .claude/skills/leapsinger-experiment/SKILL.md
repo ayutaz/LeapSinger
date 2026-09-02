@@ -162,6 +162,17 @@ uv run python -m train --config <config> \
 
 **device も混ぜないこと。** CPU と GPU は conv/matmul の非決定性で bit 一致しません。
 
+### 未検証の学習経路は、借りる前に smoke で踏む
+
+**実測（GAN fine-tune）:** GAN 付き SVC は一度も動かしたことがない経路でした
+（smoke は SVS 側の GAN しか踏んでいなかった）。**vast.ai で 1〜2 時間ぶん払う前に**
+smoke へステージを足し、手元の GPU で確認しました。
+
+**「落ちない」では足りません。** TensorBoard で `d_loss` / `adv` / `gan_ramp` が実際に
+出ていること、**判別器が本物と偽物を分け始めていること**まで見ます。config に
+`enabled: true` と書いてあっても、`gan_start_step` が短い smoke の step 数より大きいと
+**GAN 経路を一度も通らずに「通った」ことになります**（smoke では 5 step に前倒しした）。
+
 ### 素材の異常は「上限からの距離」で気づく
 
 **実測（M5）:** hold-out 6 区間のうち 3 本がイントロや間奏（有声率 3.5〜34%）でした。

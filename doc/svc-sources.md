@@ -25,7 +25,7 @@
 | [`configs/3speaker_gan2d.yaml`](../configs/3speaker_gan2d.yaml) | 既存 SVS batch/update/GAN 設定の比較 |
 | [`test_svc_model.py`](../test_svc_model.py) | targeted verification の範囲 |
 | [`preprocess/svc/`](../preprocess/svc/) | 整列・部分集合・loudness・検査・coverage・split・report の実装 |
-| [`test_svc_preprocess.py`](../test_svc_preprocess.py) / [`test_svc_dataset.py`](../test_svc_dataset.py) | 契約テスト（合計 366 件のうち 178 件） |
+| [`test_svc_preprocess.py`](../test_svc_preprocess.py) / [`test_svc_dataset.py`](../test_svc_dataset.py) | 契約テスト（合計 388 件のうち 178 件） |
 | [`configs/svc_base_multi.yaml`](../configs/svc_base_multi.yaml) / [`tools/m3_corpus.py`](../tools/m3_corpus.py) | M3 の recipe と素材の用意（話者ごとに 1 shard） |
 | [`tools/m2_verify.py`](../tools/m2_verify.py) / [`tools/m3_verify.py`](../tools/m3_verify.py) / [`tools/nhv_indist.py`](../tools/nhv_indist.py) | M2 / M3 / M0 ゴール 4 の測定と、その JSON 報告 |
 | [`tools/svc_convert.py`](../tools/svc_convert.py) / [`tools/audio_metrics.py`](../tools/audio_metrics.py) | 任意 WAV の変換 CLI と、帯域・spectral centroid の測定 |
@@ -44,8 +44,13 @@
 | `out/m5/testset.json` | M5 の test set（seed から決定的。有声率と移調量つき） |
 | `out/m5/metrics_{leapsvc,seedvc}/*.json` | 両系の測定（pitch / timing / similarity / cer / signal_quality / failures / rtf） |
 | `out/m5/guard_rail.json` | 事前登録した判定の結果（**話者類似度で落ちた**） |
-| `out/m5/blind/` | blind preference の材料（26 ペア、system 名を隠したもの）。**未実施** |
 | `out/m5/probe{1..6}_*.json` | **話者性が弱い原因の調査**（層ごとの上限 / 漏れ / 話者条件 / mel の細部 / step 依存） |
+| `out/m5/steps_sweep.json` | `num_steps` の掃引（1〜32、未知 source 20 clip）。**既定を 16 にした根拠** |
+| [`configs/svc_target_ft_gan.yaml`](../configs/svc_target_ft_gan.yaml) | **GAN fine-tune の recipe**。M4 との差分は gan セクションのみ |
+| `.m0data/gan/{ckpt_*.pt,gan_out/}` | GAN fine-tune の checkpoint 8 本と実験記録（commit / config / perf / train.log / manifest） |
+| `out/gan/eval_full.json` | 8 checkpoint の評価と**事前登録した規則による選定**（`ckpt_015000`） |
+| `out/m5/metrics_gan/`、`out/m5/guard_rail_gan.json` | GAN 版での M5 再測定と guard rail 判定 |
+| `out/m5/blind/` | blind preference の材料（26 ペア、**音量を揃えた**もの）。**未実施** |
 | [`doc/svc-content-encoder.md`](svc-content-encoder.md) / [`doc/svc-dataset-ledger.md`](svc-dataset-ledger.md) | encoder 選定と M0 台帳 |
 | [`pyproject.toml`](../pyproject.toml) / [`uv.lock`](../uv.lock) / `.python-version` | Python 3.13 固定、CUDA wheel index、依存の解決結果 |
 | [`CLAUDE.md`](../CLAUDE.md) | コマンド、共有スタック、データ契約、既知の落とし穴 |
