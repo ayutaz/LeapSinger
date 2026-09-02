@@ -683,7 +683,9 @@ class BlindPreferenceTests(unittest.TestCase):
         a = (np.ones(1000, dtype=np.float32) * 0.5)
         b = (np.ones(1000, dtype=np.float32) * 0.05)
         ma, mb = match_loudness(a, b)
-        rms = lambda x: float(np.sqrt(np.mean(x ** 2)))
+
+        def rms(x):
+            return float(np.sqrt(np.mean(x ** 2)))
         self.assertAlmostEqual(rms(ma), rms(mb), places=4)
 
     def test_matching_does_not_clip(self):
