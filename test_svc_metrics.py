@@ -1360,3 +1360,143 @@ class VastCliResolutionTests(unittest.TestCase):
                     probe=lambda c: probed.append(c) or True)
         self.assertEqual(probed, [["/usr/bin/vastai"]])
 
+
+
+class BlindListenPageTests(unittest.TestCase):
+    """ブラウザで聴いて投票するページ。**blind を崩さないことが最優先の契約。**"""
+
+    ROWS = [{"pair": "pair00", "clip": "unseen08"},
+            {"pair": "pair01", "clip": "holdout00"},
+            {"pair": "pair02", "clip": "unseen17"}]
+
+    def test_every_pair_appears(self):
+        from tools.blind_test import listen_page
+        html = listen_page(self.ROWS)
+        for r in self.ROWS:
+            self.assertIn(r["pair"], html)
+
+    def test_both_sides_are_reachable_as_audio(self):
+        from tools.blind_test import listen_page
+        html = listen_page(self.ROWS)
+        self.assertIn("audio/pair00_A.wav", html)
+        self.assertIn("audio/pair00_B.wav", html)
+        self.assertIn("paired/pair00_AB.wav", html)
+
+    def test_key_rows_are_refused(self):
+        # key.json の行を渡すと **答えがページに埋まる**。受け取らないこと。
+        from tools.blind_test import listen_page
+        with self.assertRaises(ValueError):
+            listen_page([{"pair": "pair00", "clip": "unseen08",
+                          "A": "leapsvc", "B": "seedvc"}])
+
+    def test_system_names_never_reach_the_page(self):
+        from tools.blind_test import listen_page
+        html = listen_page(self.ROWS).lower()
+        for name in ("leapsvc", "seedvc", "seed-vc"):
+            self.assertNotIn(name, html)
+
+    def test_sheet_order_is_preserved(self):
+        # prepare が shuffle 済み。ページが並べ替えると曲順の癖が戻る。
+        from tools.blind_test import listen_page
+        html = listen_page(self.ROWS)
+        self.assertLess(html.index("pair00"), html.index("pair01"))
+        self.assertLess(html.index("pair01"), html.index("pair02"))
+
+    def test_clip_names_are_shown_for_bookkeeping(self):
+        from tools.blind_test import listen_page
+        html = listen_page(self.ROWS)
+        self.assertIn("unseen08", html)
+
+    def test_empty_rows_are_refused(self):
+        from tools.blind_test import listen_page
+        with self.assertRaises(ValueError):
+            listen_page([])
+
+    def test_exported_csv_header_matches_the_sheet(self):
+        # ページが吐く CSV を tally がそのまま読めること。
+        from tools.blind_test import SHEET_HEADER, listen_page
+        self.assertIn(SHEET_HEADER, listen_page(self.ROWS))
+
+    def test_existing_votes_are_carried_into_the_page(self):
+        # 途中まで書いたシートから再開できること（26 ペアを一度で聴き切るとは限らない）。
+        from tools.blind_test import listen_page
+        html = listen_page([{"pair": "pair00", "clip": "unseen08", "vote": "A"},
+                            {"pair": "pair01", "clip": "holdout00", "vote": ""}])
+        self.assertIn('"vote": "A"', html.replace("'", '"'))
+
+    def test_bad_vote_in_the_sheet_is_refused(self):
+        from tools.blind_test import listen_page
+        with self.assertRaises(ValueError):
+            listen_page([{"pair": "pair00", "clip": "unseen08", "vote": "X"}])
+
+    def test_reference_audio_is_embedded(self):
+        from tools.blind_test import listen_page
+        html = listen_page(self.ROWS,
+                           references=[{"label": "target（波音リツ）",
+                                        "path": "context/target_ref.wav"}])
+        self.assertIn("context/target_ref.wav", html)
+        self.assertIn("波音リツ", html)
+
+    def test_per_pair_source_is_embedded(self):
+        from tools.blind_test import listen_page
+        rows = [{"pair": "pair00", "clip": "unseen08",
+                 "source": "context/pair00_source.wav"}]
+        self.assertIn("context/pair00_source.wav", listen_page(rows))
+
+    def test_paths_outside_the_blind_directory_are_refused(self):
+        # 元ディレクトリを直接指すと **パスに system 名が出て** blind が崩れる。
+        from tools.blind_test import listen_page
+        with self.assertRaises(ValueError):
+            listen_page(self.ROWS,
+                        references=[{"label": "t", "path": "out/m5/leapsvc/_target_ref.wav"}])
+        with self.assertRaises(ValueError):
+            listen_page([{"pair": "pair00", "clip": "c",
+                          "source": "../leapsvc/x_source.wav"}])
+
+    def test_the_ceiling_is_refused_as_a_reference(self):
+        # 上限（GT mel -> ボコーダー）は **LeapSVC 自身のボコーダーの音**。参照として
+        # 聴かせると、その癖で A / B のどちらが LeapSVC かを当てられてしまう。
+        from tools.blind_test import listen_page
+        with self.assertRaises(ValueError):
+            listen_page(self.ROWS,
+                        references=[{"label": "上限", "path": "context/x_vocoder_only.wav"}])
+
+    def test_the_pre_registered_criterion_is_stated(self):
+        # 事前登録した基準は **自然さ**であって target 類似度ではない。
+        from tools.blind_test import listen_page
+        html = listen_page(self.ROWS)
+        self.assertIn("自然", html)
+
+    def test_source_lookup_is_exact_not_a_prefix(self):
+        # `unseen1` が `unseen10` に当たると、**別 clip の変換元を聴かせる**ことになる。
+        import tempfile
+        from pathlib import Path
+
+        from tools.blind_test import find_source
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "song__unseen10_source.wav").write_bytes(b"")
+            (root / "song__unseen1_source.wav").write_bytes(b"")
+            self.assertEqual(find_source(root, "unseen1").name, "song__unseen1_source.wav")
+            self.assertEqual(find_source(root, "unseen10").name, "song__unseen10_source.wav")
+
+    def test_missing_source_returns_none(self):
+        import tempfile
+        from pathlib import Path
+
+        from tools.blind_test import find_source
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(find_source(Path(d), "unseen1"))
+
+    def test_ambiguous_source_is_refused(self):
+        # 同じ clip の変換元が 2 つあるなら、どちらを聴かせるかは決められない。
+        import tempfile
+        from pathlib import Path
+
+        from tools.blind_test import find_source
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "a__unseen1_source.wav").write_bytes(b"")
+            (root / "b__unseen1_source.wav").write_bytes(b"")
+            with self.assertRaises(ValueError):
+                find_source(root, "unseen1")
