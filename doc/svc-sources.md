@@ -25,7 +25,7 @@
 | [`configs/3speaker_gan2d.yaml`](../configs/3speaker_gan2d.yaml) | 既存 SVS batch/update/GAN 設定の比較 |
 | [`test_svc_model.py`](../test_svc_model.py) | targeted verification の範囲 |
 | [`preprocess/svc/`](../preprocess/svc/) | 整列・部分集合・loudness・検査・coverage・split・report の実装 |
-| [`test_svc_preprocess.py`](../test_svc_preprocess.py) / [`test_svc_dataset.py`](../test_svc_dataset.py) | 契約テスト（合計 388 件のうち 178 件） |
+| [`test_svc_preprocess.py`](../test_svc_preprocess.py) / [`test_svc_dataset.py`](../test_svc_dataset.py) | 契約テスト（合計 406 件のうち 178 件） |
 | [`configs/svc_base_multi.yaml`](../configs/svc_base_multi.yaml) / [`tools/m3_corpus.py`](../tools/m3_corpus.py) | M3 の recipe と素材の用意（話者ごとに 1 shard） |
 | [`tools/m2_verify.py`](../tools/m2_verify.py) / [`tools/m3_verify.py`](../tools/m3_verify.py) / [`tools/nhv_indist.py`](../tools/nhv_indist.py) | M2 / M3 / M0 ゴール 4 の測定と、その JSON 報告 |
 | [`tools/svc_convert.py`](../tools/svc_convert.py) / [`tools/audio_metrics.py`](../tools/audio_metrics.py) | 任意 WAV の変換 CLI と、帯域・spectral centroid の測定 |
@@ -50,7 +50,7 @@
 | `.m0data/gan/{ckpt_*.pt,gan_out/}` | GAN fine-tune の checkpoint 8 本と実験記録（commit / config / perf / train.log / manifest） |
 | `out/gan/eval_full.json` | 8 checkpoint の評価と**事前登録した規則による選定**（`ckpt_015000`） |
 | `out/m5/metrics_gan/`、`out/m5/guard_rail_gan.json` | GAN 版での M5 再測定と guard rail 判定 |
-| `out/m5/blind/` | blind preference の材料（26 ペア、**音量を揃えた**もの）。**未実施** |
+| `out/m5/blind/` | blind preference の材料（26 ペア、**音量を揃えた**もの）と聴取ページ `listen.html`、参照音声 `context/`（target 本人の録音 + 各ペアの変換元 26 本）。**投票は未実施** |
 | [`doc/svc-content-encoder.md`](svc-content-encoder.md) / [`doc/svc-dataset-ledger.md`](svc-dataset-ledger.md) | encoder 選定と M0 台帳 |
 | [`pyproject.toml`](../pyproject.toml) / [`uv.lock`](../uv.lock) / `.python-version` | Python 3.13 固定、CUDA wheel index、依存の解決結果 |
 | [`CLAUDE.md`](../CLAUDE.md) | コマンド、共有スタック、データ契約、既知の落とし穴 |

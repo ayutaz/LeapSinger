@@ -96,7 +96,7 @@ SVC: source WAV -> content/F0/UV/loudness -> LeapSVC -> mel + F0 -> NHVSing -> W
 
 `run_smoke.py` は 3rd-party API・学習・自動再開・推論・ボコーダー・前処理・ONNX 書き出しまでを 1 コマンドで通し、終了コードが失敗ステージ数になります。**依存やバージョンを変えた後、環境を移した後、学習を始める前に必ず走らせること。** 入力は合成波形なので品質の検証にはならず、配線が壊れていないことだけを示します。
 
-単体テストは **388 件**（`test_svc_model` 57 / `test_svc_preprocess` 115 / `test_svc_dataset` 63 / `test_svc_metrics` 153）で、重いモデルもネットワークも使いません。`unittest discover` は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。上の 4 本を明示的に並べるか、`run_smoke.py` の `unittest` ステージを使ってください。後者は top-level の `test_*.py` を自動収集し、件数を表示します。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗します。
+単体テストは **406 件**（`test_svc_model` 57 / `test_svc_preprocess` 115 / `test_svc_dataset` 63 / `test_svc_metrics` 171）で、重いモデルもネットワークも使いません。`unittest discover` は hook で止めています（収集条件が暗黙で、走った件数が分かりにくいため）。上の 4 本を明示的に並べるか、`run_smoke.py` の `unittest` ステージを使ってください。後者は top-level の `test_*.py` を自動収集し、件数を表示します。`uv` を介さず素の Python で走らせると `librosa` 等が無く収集時に失敗します。
 
 ONNX / OpenUTAU 書き出し（SVS のみ。実験的）:
 
@@ -228,6 +228,12 @@ fine-tune すると、未知 source の回復率が 69.4% → **75.3%**、signal
 （target 指定で 0.24 → 0.52）。**予測 mel の細部が 25% 欠けている**のが原因で、
 **base も fine-tune も `gan.enabled: false`**（flow 損失 + 再構成損失のみ）でした。
 step を増やすと細部と話者性が**同時に単調に**戻ることで因果を確認しています。
+- **blind test の参照に上限を入れないこと。** 「正解の音」として
+`*_vocoder_only.wav` を聴かせたくなりますが、これは **LeapSVC 自身のボコーダー
+（NHVSing）の出力**なので、耳がその癖を覚えると **A / B のどちらが LeapSVC かを当てられます**。
+参照に使えるのは**どちらの系の出力でもないもの**だけです（target 本人の録音、両系で同一の
+変換元）。`tools/blind_test.py` の `listen_page()` は上限のパスと blind ディレクトリ外の
+パスを拒否します（後者は**パスに system 名が出る**ため）。
 - **持ち込み音源は学習分布より大きいので `--match-loudness` を付けること。** 配信用に整えられた音源は peak 1.0 付近まで上げられており、学習素材（波音リツ DB は peak 0.107）から大きく外れます。実測で loudness 条件が **+1.40σ** に出て、spectral centroid が上限比 **−47%** まで落ちました。合わせると **−24%** で他の素材と同じ範囲に戻ります（`preprocess/svc/loudness.py` の `loudness_match_gain`）。
 - **推論時に入力の音量を勝手に触らないこと。** 学習（`preprocess.svc.run`）は生の音量のまま特徴を取ります。推論側で peak 正規化すると loudness 条件が学習分布からずれ、モデルが低域を持ち上げて高域を削ります（波音リツ DB は peak 0.107 なので実質 19 dB の増幅になり、spectral centroid が 620 → 368 Hz に落ちました）。`features_to_item()` は正規化の同一性を保証しますが、**その手前で波形を加工すると保証の外**です。
 - **内容指標だけで音の劣化を判断しないこと。** 上の不具合で centroid が 620 → 368 Hz に落ちても、content cos は 0.8217 → 0.8096 としか動きませんでした。`tools/audio_metrics.py` の帯域指標を併せて見ます。

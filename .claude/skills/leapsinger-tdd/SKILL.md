@@ -10,7 +10,7 @@ description: このリポジトリで実装を書くときの TDD の当て方�
 ## 1. テストの置き場と実行
 
 ```bash
-uv run python -m unittest test_svc_model test_svc_preprocess test_svc_dataset test_svc_metrics -v   # 単体 388 件
+uv run python -m unittest test_svc_model test_svc_preprocess test_svc_dataset test_svc_metrics -v   # 単体 406 件
 uv run python -m unittest test_svc_model.HarmonicSVCModelTests.test_single_item_inference_contract
 uv run python tools/hooks/test_guard.py                      # hook の回帰 51 件
 LEAPSINGER_INTEGRATION=1 uv run python -m unittest test_svc_preprocess_integration   # 実モデル

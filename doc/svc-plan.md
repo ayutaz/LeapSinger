@@ -1085,11 +1085,30 @@ ONNX で CPU 実行のためで、**acoustic を速くしても end-to-end は�
 提示順を randomize、対応は `key.json`）。**評価者が聴いて採点する工程なので自動化して
 いません。**
 
+**確認済み（2026-09-04）:** ブラウザで聴いて投票するページを生成できます。26 ペアを手で
+再生して csv を編集する形だと工程が重く、**着手されないまま残る**ためです。投票は
+localStorage に持つので、途中で閉じても続きから聴けます。
+
 ```bash
-# out/m5/blind/sheet.csv の vote 列へ A / B / tie を記入してから
+uv run python tools/blind_test.py page --sheet out/m5/blind/sheet.csv \
+  --target-ref out/m5/seedvc/_target_ref.wav --source-dir out/m5/leapsvc
+# ページで投票 -> sheet.csv を書き出して上書き -> 集計
 uv run python tools/blind_test.py tally --sheet out/m5/blind/sheet.csv \
   --key out/m5/blind/key.json --out out/m5/blind/result.json
 ```
+
+**参照音声を 2 つ添えます。** 「基準の音が無いと判断できない」という指摘によるものです。
+
+| 参照 | 中身 | 系が漏れない理由 |
+|---|---|---|
+| target 本人の録音 | 波音リツの実録音 30 秒（加工なし） | どちらの系の出力でもない |
+| そのペアの変換元 | 入力の歌 | **両系で同一の入力** |
+
+**上限（`*_vocoder_only.wav`）は参照にできません。** 上限は **LeapSVC 自身のボコーダー
+（NHVSing）の出力**なので、その癖を耳が覚えると **A / B のどちらが LeapSVC かを当てられます**。
+`listen_page()` は上限のパスを渡されると落ちます（後から「正解を入れよう」として blind を
+壊さないため）。参照は `context/` へ**中立な名前で複写**します — 元の場所を直接指すと
+**パスに system 名が出ます**。
 
 **ただし判定はすでに決まっています。** guard rail が落ちているので、preference で勝っても
 「より良い」とは書けません。blind test は**それでも実施する価値があります** — 客観指標が
